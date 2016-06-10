@@ -747,7 +747,7 @@ module Crystal
     def update(from = nil)
       return unless entries.all? &.value.type?
 
-      entries = entries.map do |element|
+      entries = self.entries.map do |element|
         NamedArgumentType.new(element.key, element.value.type)
       end
 

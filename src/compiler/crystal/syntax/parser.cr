@@ -36,6 +36,7 @@ module Crystal
       @wants_doc = false
       @doc_enabled = false
       @no_type_declaration = 0
+      @assigned_vars = [] of String
     end
 
     def wants_doc=(wants_doc)
@@ -316,7 +317,13 @@ module Crystal
               atomic = UninitializedVar.new(atomic, type).at(location)
               return atomic
             else
-              value = parse_op_assign_no_control
+              if atomic.is_a?(Var) && !var?(atomic.name)
+                @assigned_vars.push atomic.name
+                value = parse_op_assign_no_control
+                @assigned_vars.pop
+              else
+                value = parse_op_assign_no_control
+              end
             end
 
             pop_def if needs_new_scope
@@ -3577,6 +3584,10 @@ module Crystal
               end
               Var.new name
             else
+              if !force_call && !block_arg && !named_args && !global && !last_call_has_parentheses && @assigned_vars.includes?(name)
+                raise "read before definition of local variable '#{name}'", location
+              end
+
               Call.new nil, name, [] of ASTNode, nil, block_arg, named_args, global, name_column_number, last_call_has_parentheses
             end
           end

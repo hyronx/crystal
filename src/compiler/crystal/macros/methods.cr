@@ -1015,7 +1015,7 @@ module Crystal
         end
       when "size"
         interpret_argless_method(method, args) do
-          type = type.instance_type
+          type = self.type.instance_type
           case type
           when TupleInstanceType
             NumberLiteral.new(type.tuple_types.size)
@@ -1027,7 +1027,7 @@ module Crystal
         end
       when "keys"
         interpret_argless_method(method, args) do
-          type = type.instance_type
+          type = self.type.instance_type
           if type.is_a?(NamedTupleInstanceType)
             ArrayLiteral.map(type.entries) { |entry| MacroId.new(entry.name) }
           else
@@ -1036,7 +1036,7 @@ module Crystal
         end
       when "[]"
         interpret_one_arg_method(method, args) do |arg|
-          type = type.instance_type
+          type = self.type.instance_type
           case type
           when NamedTupleInstanceType
             case arg
