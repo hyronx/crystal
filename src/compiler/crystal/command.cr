@@ -1,4 +1,5 @@
 require "json"
+require "yaml"
 require "./command/*"
 
 class Crystal::Command
@@ -616,6 +617,12 @@ class Crystal::Command
 
     if !no_codegen && !run && Dir.exists?(output_filename)
       error "can't use `#{output_filename}` as output filename because it's a directory"
+    end
+
+    doc = YAML.parse_all File.read(Dir.current + "/.shard.yml")
+    if doc["type"] == "lib"
+      compiler.library = true
+      compiler.link_flags << "-shared"
     end
 
     @config = CompilerConfig.new compiler, sources, output_filename, original_output_filename, arguments, specified_output, hierarchy_exp, cursor_location, output_format
