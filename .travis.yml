@@ -23,6 +23,7 @@ branches:
     - master
     - gh-pages
     - /\Arelease\/.+\z/
+    - feature/shared-library
 notifications:
   irc:
     channels:
