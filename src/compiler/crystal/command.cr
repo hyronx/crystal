@@ -624,7 +624,6 @@ class Crystal::Command
       doc = YAML.parse(File.read file)
       if doc["type"] == "lib"
         compiler.library = true
-  
         flags = compiler.link_flags
         if flags.nil?
           compiler.link_flags = "-shared"
@@ -632,7 +631,7 @@ class Crystal::Command
           compiler.link_flags = "-shared" + flags
         end
       end
-    end 
+    end
 
     @config = CompilerConfig.new compiler, sources, output_filename, original_output_filename, arguments, specified_output, hierarchy_exp, cursor_location, output_format
   end
