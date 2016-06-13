@@ -39,6 +39,7 @@ module Crystal
     property emit : Array(String)?
     property original_output_filename : String?
     property? cleanup : Bool?
+    property? library : Bool
 
     @target_machine : LLVM::TargetMachine?
     @pass_manager_builder : LLVM::PassManagerBuilder?
@@ -58,6 +59,7 @@ module Crystal
       @wants_doc = false
       @flags = [] of String
       @cleanup = true
+      @library = false
     end
 
     def compile(source : Source, output_filename)
