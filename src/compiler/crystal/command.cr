@@ -620,7 +620,7 @@ class Crystal::Command
     end
 
     file = Dir.current + "/.shard.yml"
-    if File.exist? file
+    if File.exists? file
       doc = YAML.parse(File.read file)
       if doc["type"] == "lib"
         compiler.library = true
