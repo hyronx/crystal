@@ -619,17 +619,20 @@ class Crystal::Command
       error "can't use `#{output_filename}` as output filename because it's a directory"
     end
 
-    doc = YAML.parse File.read(Dir.current + "/.shard.yml")
-    if doc["type"] == "lib"
-      compiler.library = true
-
-      flags = compiler.link_flags
-      if flags.nil?
-        compiler.link_flags = "-shared"
-      else
-        compiler.link_flags = "-shared" + flags
+    file = Dir.current + "/.shard.yml"
+    if File.exist? file
+      doc = YAML.parse(File.read file)
+      if doc["type"] == "lib"
+        compiler.library = true
+  
+        flags = compiler.link_flags
+        if flags.nil?
+          compiler.link_flags = "-shared"
+        else
+          compiler.link_flags = "-shared" + flags
+        end
       end
-    end
+    end 
 
     @config = CompilerConfig.new compiler, sources, output_filename, original_output_filename, arguments, specified_output, hierarchy_exp, cursor_location, output_format
   end
