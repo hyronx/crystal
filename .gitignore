@@ -6,6 +6,7 @@
 coverage/
 /deps/
 /.build/
+/.vscode/
 .*.swp
 /Makefile.local
 all_spec
