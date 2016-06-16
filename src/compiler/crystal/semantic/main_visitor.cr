@@ -1701,6 +1701,16 @@ module Crystal
 
     def visit(node : While)
       old_while_vars = @while_vars
+
+      before_cond_vars_copy = @vars.dup
+
+      @vars.each do |name, var|
+        before_var = MetaVar.new(name)
+        before_var.bind_to(var)
+        before_var.nil_if_read = var.nil_if_read
+        @vars[name] = before_var
+      end
+
       before_cond_vars = @vars.dup
 
       request_type_filters do
@@ -1721,7 +1731,7 @@ module Crystal
       node.body.accept self
 
       endless_while = node.cond.true_literal?
-      merge_while_vars node.cond, endless_while, before_cond_vars, after_cond_vars, @vars, node.break_vars
+      merge_while_vars node.cond, endless_while, before_cond_vars_copy, before_cond_vars, after_cond_vars, @vars, node.break_vars
 
       @while_stack.pop
       @block = old_block
@@ -1740,7 +1750,7 @@ module Crystal
     end
 
     # Here we assign the types of variables after a while.
-    def merge_while_vars(cond, endless, before_cond_vars, after_cond_vars, while_vars, all_break_vars)
+    def merge_while_vars(cond, endless, before_cond_vars_copy, before_cond_vars, after_cond_vars, while_vars, all_break_vars)
       after_while_vars = MetaVars.new
 
       cond_var = get_while_cond_assign_target(cond)
@@ -1759,7 +1769,6 @@ module Crystal
           # If there was a previous variable, we use that type merged
           # with the last type inside the while.
         elsif before_cond_var
-          before_cond_var.bind_to(while_var)
           after_while_var = MetaVar.new(name)
 
           # If the loop is endless
@@ -1767,11 +1776,18 @@ module Crystal
             after_while_var.bind_to(while_var)
             after_while_var.nil_if_read = while_var.nil_if_read
           else
-            after_while_var.bind_to(before_cond_var)
+            # We need to bind to the variable *before* the condition, even
+            # after before the variables that are used in the condition
+            # `before_cond_vars` are modified in the while body
+            after_while_var.bind_to(before_cond_vars_copy[name])
             after_while_var.bind_to(while_var)
             after_while_var.nil_if_read = before_cond_var.nil_if_read || while_var.nil_if_read
           end
           after_while_vars[name] = after_while_var
+
+          # We must also bind the variable before the condition, because
+          # its type now must also include the type at the exit of the while
+          before_cond_var.bind_to(while_var)
 
           # Otherwise, it's a new variable inside the while: used
           # outside it must be nilable, unless the loop is endless.
@@ -2009,7 +2025,7 @@ module Crystal
         when "to_u64"                then mod.uint64
         when "to_f", "to_f64"        then mod.float64
         when "to_f32"                then mod.float32
-        when "chr"                   then mod.char
+        when "unsafe_chr", "chr"     then mod.char # TODO: remove "chr" after 0.18.0
         else
           raise "Bug: unknown cast operator #{typed_def.name}"
         end
@@ -2224,6 +2240,7 @@ module Crystal
         var = @vars[node_name] = new_meta_var(node_name)
         meta_var = (@meta_vars[node_name] ||= new_meta_var(node_name))
         meta_var.bind_to(var)
+        meta_var.assigned_to = true
 
         if types
           unified_type = @mod.type_merge(types).not_nil!

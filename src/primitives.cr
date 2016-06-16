@@ -299,13 +299,18 @@ end
 
   {% for int in ints %}
     struct {{int.id}}
-      # Returns a `Char` that has the unicode codepoint of *self*.
+      # Returns a `Char` that has the unicode codepoint of *self*,
+      # without checking if this integer is in the range valid for
+      # chars (`0..0x10ffff`).
+      #
+      # You should never use this method unless `chr` turns out to
+      # be a bottleneck.
       #
       # ```
-      # 97.chr # => 'a'
+      # 97.unsafe_chr # => 'a'
       # ```
       @[Primitive(:cast)]
-      def chr : Char
+      def unsafe_chr : Char
       end
 
       {% for int2 in ints %}

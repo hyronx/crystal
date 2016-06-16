@@ -93,9 +93,12 @@ module Crystal
       last = parse_expression
       skip_space
 
+      last_is_target = multi_assign_target?(last)
+
       case @token.type
       when :","
         # Continue
+        unexpected_token unless last_is_target
       when :NEWLINE, :";"
         return last
       else
@@ -156,6 +159,21 @@ module Crystal
 
       multi = MultiAssign.new(targets, values).at(location)
       parse_expression_suffix multi, @token.location
+    end
+
+    def multi_assign_target?(exp)
+      case exp
+      when Underscore, Var, InstanceVar, ClassVar, Global, Assign
+        true
+      when Call
+        !exp.has_parenthesis && (
+          (exp.args.empty? && !exp.named_args) ||
+            (exp.name[0].alpha? && exp.name.ends_with?('=')) ||
+            exp.name == "[]" || exp.name == "[]="
+        )
+      else
+        false
+      end
     end
 
     def multi_assign_middle?(exp)
@@ -1866,7 +1884,10 @@ module Crystal
           line_number = @token.line_number
           delimiter_state = @token.delimiter_state
           next_token_skip_space_or_newline
-          exp = parse_expression
+          exp, _ = preserve_last_call_has_parentheses do
+            @last_call_has_parentheses = true
+            parse_expression
+          end
 
           if exp.is_a?(StringLiteral)
             pieces << Piece.new(exp.value, line_number)
@@ -4066,7 +4087,7 @@ module Crystal
       end
 
       if allow_type_vars && @token.type == :"("
-        next_token_skip_space
+        next_token_skip_space_or_newline
 
         if named_tuple_start? || @token.type == :DELIMITER_START
           types = [] of ASTNode
@@ -4079,6 +4100,9 @@ module Crystal
           named_args = nil
         end
 
+        next_token if @token.type == :","
+
+        skip_space_or_newline
         check :")"
         const = Generic.new(const, types, named_args).at(location)
         const.end_location = token_end_location
@@ -4107,7 +4131,7 @@ module Crystal
         end
 
         check :":"
-        next_token_skip_space
+        next_token_skip_space_or_newline
 
         type = parse_single_type(allow_commas: false)
         skip_space_or_newline
@@ -4374,10 +4398,10 @@ module Crystal
 
       @temp_token.copy_from(@token)
 
-      next_token_skip_space
+      next_token_skip_space_or_newline
 
       while @token.type == :"{" || @token.type == :"("
-        next_token_skip_space
+        next_token_skip_space_or_newline
       end
 
       begin

@@ -1,14 +1,22 @@
-## Next
+## 0.18.0 (14-06-2016)
 
 * **(breaking change)** `IniFile` was renamed to `INI`, and its method `load` renamed to `parse`
 * **(breaking change)** `Process.getpgid` was renamed to `Process.pgid`
 * **(breaking change)** An `Exception`'s backtrace is now set when it's raised, not when it's created: it's `backtrace` method raises if it's not set, and there's `backtrace?` to get it as a nilable array
 * **(breaking change)** `dup` is now correctly implemented in all types. `clone` is not defined by default, but some types in the standard library do. Also check `Object#def_clone`
-* **(breaking change)** the `method_missing` macro now only accepts a single argument: a `Call` now. The form that accepted 3 arguments was removed.
+* **(breaking change)** the `method_missing` macro only accepts a single argument: a `Call` now. The form that accepted 3 arguments was removed.
 * **(breaking change)** the `delegate` macro must now be used like `delegate method1, method2, ..., methodN, to: object`
-* **(breaking change)** `Hash#each_with_index` and `Hash#each_with_object` now yield a tuple (pair) and an index, because it's now `Enumerable`. Use `do |(key, value), index|` for this.
+* **(breaking change)** `Hash#each_with_index` and `Hash#each_with_object` now yield a tuple (pair) and an index, because `Hash` is now `Enumerable`. Use `do |(key, value), index|` for this.
 * **(breaking change)** `{"foo": 1}` denotes a named tuple literal now, not a hash literal. Use `{"foo" => 1}` instead. This also applies to, for example `HTTP::Headers{...}`
+* **(breaking change)** Extra block arguments now give a compile-time error. This means that methods that yield more than once, one time with N arguments and another time with M arguments, with N < M, will always give an error. To fix this, add M - N `nil` fillers on the yield side (this makes it more explicit that `nil` was intended to be a block argument value)
+* **(breaking change)** `OpenSSL::SSL::Context` and `OpenSSL::SSL::Socket` can no longer be used directly anymore. Use their respective subclasses `OpenSSL::SSL::Context::Client`,
+  with `OpenSSL::SSL::Socket::Client`, `OpenSSL::SSL::Context::Server` with `OpenSSL::SSL::Socket::Server`.
+* **(breaking change)** TLS server and client sockets now use sane defaults, including support for hostname verification for client sockets, used by default in `HTTP::Client`.
+* **(breaking change)** The `ssl` option was renamed to `tls` in `HTTP::Client`, `HTTP::Server`, `HTTP::WebSocket`, `OAuth::Consumer`, `OAuth::Signature` and `OAuth2::AccessToken`.
+* The `dns_timeout` setting in a few classes like `HTTP::Client` and `TCPSocket` is now ignored until a next version supports a non-blocking `getaddrinfo` equivalent
+* `OpenSSL::SSL::Socket::Client` supports server name indication now.
 * The `build` command was renamed to `compile`. The `build` command is deprecated and will be removed in a future version
+* The `--cross-compile` flag no longer takes arguments, use `--target` and `-D`
 * Added a `Union` type that represents the type of a union, which can have class methods
 * Methods, procs and lib functions that are marked as returning `Void` now return `Nil`
 * Methods that are marked as returning `Nil` are not checked for a correct return type, they always return `nil` now
@@ -21,12 +29,15 @@
 * Splats in `yield` can now be used
 * Splat in block arguments can now be used.
 * Added block auto-unpacking: if a method yields a tuple and a block specifies more then one block argument, the tuple is unpacked to these arguments
+* String literals are now allowed as external method arguments, to match named tuples and named arguments
+* `sizeof` and `instance_sizeof` can now be used as generic type arguments (mostly useful combined with `StaticArray`)
 * `Hash`, `HTTP::Headers`, `HTTP::Params` and `ENV` now include the `Enumerable` module
 * `Proc` is now `Proc(*T, R)`
 * `Tuple(*T).new` and `NamedTuple(**T).new` now correctly match the given `T` (#1828)
 * `Float64#to_s` now produces an ever more accurate output
 * `JSON` parsing now correctly handle floats with many digits
 * `JSON.mapping` and `YAML.mapping` now also accept named arguments in addition to a hash literal or named tuple literal
+* `Int#chr` now raises if the integer is out of a char's range. The old non-raising behaviour is now in `Int#unsafe_chr`.
 * The output of `pp x` is now `x # => ...` instead of `x = ...`
 * The output of the `debug()` macro method now tries to format the code (pass `false` to disable this)
 * Added `JSON` and `YAML` parsing and mapping for unions
@@ -45,8 +56,9 @@
 * Added `ArrayLiteral#[range]` and `ArrayLiteral#[from, to]` in macros (applicable for `TupleLiteral` too)
 * Added `Generic` macro methods: `name`, `type_vars`, `named_args`
 * Spec: added JUnit formatter output (thanks @juanedi)
+* The `tls` option in `HTTP::Client` can now take a `OpenSSL::SSL::Context::Client` in addition to `true`.
 * `HTTP::LogHandler` logs exceptions now (thanks @jhass)
-* `HTTP::ErrorHandler` does not tell the client which exception occured by default (can be enabled with a `verbose` flag) (thanks @jhass)
+* `HTTP::ErrorHandler` does not tell the client which exception occurred by default (can be enabled with a `verbose` flag) (thanks @jhass)
 * Several bug fixes
 
 ## 0.17.4 (2016-05-26)
