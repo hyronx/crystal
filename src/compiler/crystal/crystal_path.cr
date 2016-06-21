@@ -114,14 +114,13 @@ module Crystal
           filename_dir_index = filename.rindex('/').not_nil!
           filename_dir = filename[0..filename_dir_index]
 
-          # Extracts the actual name of the directory 
+          # Extracts the actual name of the directory
           # which should be the same like the library searched for.
           filename_index = filename.rindex('/', filename_dir_index - 1).not_nil!
           filename = filename[filename_index..filename_dir_index]
           if filename.starts_with?("lib")
             filename = "lib" + filename
           end
-          
           if filename.ends_with?(".so")
             filename += ".so"
           end

@@ -187,7 +187,7 @@ class Crystal::CodeGenVisitor
     if @single_module && no_export
       old_linkage = context.fun.linkage
       context.fun.linkage = LLVM::Linkage::Internal
-    end   
+    end
 
     args.each_with_index do |arg, i|
       param = context.fun.params[i + offset]
