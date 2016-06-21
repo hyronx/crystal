@@ -1,4 +1,14 @@
+<<<<<<< HEAD
 require "c/stdlib"
+=======
+lib LibC
+  fun tmpfile : File
+
+  ifdef darwin || linux
+    fun mkstemp(result : UInt8*) : Int32
+  end
+end
+>>>>>>> refs/remotes/origin/windows
 
 # The `Tempfile` class is for managing temporary files.
 # Every tempfile is operated as a `File`, including
@@ -34,6 +44,7 @@ require "c/stdlib"
 class Tempfile < IO::FileDescriptor
   # Creates a `Tempfile` with the given filename.
   def initialize(name)
+<<<<<<< HEAD
     tmpdir = self.class.dirname + File::SEPARATOR
     @path = "#{tmpdir}#{name}.XXXXXX"
     fileno = LibC.mkstemp(@path)
@@ -41,6 +52,20 @@ class Tempfile < IO::FileDescriptor
       raise Errno.new("mkstemp")
     end
     super(fileno, blocking: true)
+=======
+    ifdef darwin || linux
+      if tmpdir = ENV["TMPDIR"]?
+        tmpdir = tmpdir + '/' unless tmpdir.ends_with? '/'
+      else
+        tmpdir = "/tmp/"
+      end
+      @path = "#{tmpdir}#{name}.XXXXXX"
+      super(LibC.mkstemp(@path))
+    elsif windows
+      @path = ""
+      super(LibC.fileno(LibC.tmpfile))
+    end
+>>>>>>> refs/remotes/origin/windows
   end
 
   # Retrieves the full path of a this tempfile.
@@ -82,7 +107,11 @@ class Tempfile < IO::FileDescriptor
 
   # Deletes this tempfile.
   def delete
-    File.delete(@path)
+    ifdef darwin || linux
+      File.delete(@path)
+    elsif windows
+      0
+    end
   end
 
   # ditto

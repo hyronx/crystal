@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 require "c/fcntl"
 require "c/stdio"
 require "c/stdlib"
@@ -11,6 +12,25 @@ class File < IO::FileDescriptor
   else
     '/'
   end
+=======
+ifdef evented
+  require "uv"
+  class File < UV::File
+  end
+else
+  class File < FileDescriptorIO
+    def initialize(filename, mode = "r")
+      oflag = open_flag(mode)
+
+      ifdef darwin || linux
+        fd = LibC.open(filename, oflag, DEFAULT_CREATE_MODE)
+      elsif windows
+        fd = LibC.wopen(filename.to_utf16, oflag, DEFAULT_CREATE_MODE)
+      end
+      if fd < 0
+        raise Errno.new("Error opening file '#{filename}' with mode '#{mode}'")
+      end
+>>>>>>> refs/remotes/origin/windows
 
   # The file/directory separator string. "/" in unix, "\\" in windows.
   SEPARATOR_STRING = ifdef windows
@@ -19,8 +39,21 @@ class File < IO::FileDescriptor
     "/"
   end
 
+<<<<<<< HEAD
   # :nodoc:
   DEFAULT_CREATE_MODE = LibC::S_IRUSR | LibC::S_IWUSR | LibC::S_IRGRP | LibC::S_IROTH
+=======
+class File
+  ifdef darwin || linux
+    SEPARATOR = '/'
+    PATH_SEPARATOR = ':'
+    DEFAULT_CREATE_MODE = LibC::S_IRUSR | LibC::S_IWUSR | LibC::S_IRGRP | LibC::S_IROTH
+  elsif windows
+    SEPARATOR = '\\'
+    PATH_SEPARATOR = ';'
+    DEFAULT_CREATE_MODE = LibC::S_IRUSR | LibC::S_IWUSR
+  end
+>>>>>>> refs/remotes/origin/windows
 
   def initialize(filename : String, mode = "r", perm = DEFAULT_CREATE_MODE, encoding = nil, invalid = nil)
     oflag = open_flag(mode) | LibC::O_CLOEXEC
@@ -74,6 +107,7 @@ class File < IO::FileDescriptor
     oflag = m | o
   end
 
+<<<<<<< HEAD
   getter path : String
 
   # Returns a `File::Stat` object for the file given by *path* or raises
@@ -87,11 +121,23 @@ class File < IO::FileDescriptor
   # ```
   def self.stat(path) : Stat
     if LibC.stat(path.check_no_null_byte, out stat) != 0
+=======
+  getter path
+
+  def self.stat(path)
+    ifdef darwin || linux
+      status = LibC.stat(path, out stat)
+    elsif windows
+      status = LibC.wstat(path.to_utf16, out stat)
+    end
+    if status != 0
+>>>>>>> refs/remotes/origin/windows
       raise Errno.new("Unable to get stat for '#{path}'")
     end
     Stat.new(stat)
   end
 
+<<<<<<< HEAD
   # Returns a `File::Stat` object for the file given by *path* or raises
   # `Errno` in case of an error. In case of a symbolic link
   # information about it is returned.
@@ -103,11 +149,21 @@ class File < IO::FileDescriptor
   # ```
   def self.lstat(path) : Stat
     if LibC.lstat(path.check_no_null_byte, out stat) != 0
+=======
+  def self.lstat(path)
+    ifdef darwin || linux
+      status = LibC.lstat(path, out stat)
+    elsif windows
+      status = LibC.wstat(path.to_utf16, out stat)
+    end
+    if status != 0
+>>>>>>> refs/remotes/origin/windows
       raise Errno.new("Unable to get lstat for '#{path}'")
     end
     Stat.new(stat)
   end
 
+<<<<<<< HEAD
   # Returns `true` if *path* exists else returns `false`
   #
   # ```
@@ -170,8 +226,26 @@ class File < IO::FileDescriptor
       else
         raise Errno.new("stat")
       end
+=======
+  def self.exists?(filename)
+    ifdef darwin || linux
+      LibC.access(filename, LibC::F_OK) == 0
+    elsif windows
+      LibC.waccess(filename.to_utf16, LibC::F_OK) == 0
     end
-    File::Stat.new(stat).file?
+  end
+
+  def self.file?(path)
+    ifdef darwin || linux
+      status = LibC.stat(path, out stat)
+    elsif windows
+      status = LibC.wstat(path.to_utf16, out stat)
+    end
+    if status != 0
+      return false
+>>>>>>> refs/remotes/origin/windows
+    end
+    Stat.new(stat).file?
   end
 
   # Returns `true` if the given *path* exists and is a directory.
@@ -187,6 +261,7 @@ class File < IO::FileDescriptor
     Dir.exists?(path)
   end
 
+<<<<<<< HEAD
   # Returns all components of the given *path* except the last one.
   #
   # ```
@@ -200,9 +275,27 @@ class File < IO::FileDescriptor
         SEPARATOR_STRING
       else
         path[0, index]
+=======
+  def self.dirname(filename)
+    ifdef darwin || linux
+      index = filename.rindex(SEPARATOR)
+      if index
+        if index == 0
+          "/"
+        else
+          filename[0, index]
+        end
+      else
+        "."
+>>>>>>> refs/remotes/origin/windows
       end
-    else
-      "."
+    elsif windows
+      drive :: UInt16[3]
+      buf :: UInt16[256]
+      LibC.wsplitpath(filename.to_utf16, drive, buf, nil, nil)
+      dir = String.new(drive.buffer) + String.new(buf.buffer)
+      dir = dir[0...dir.length - 1] if dir.ends_with?('\\')
+      dir
     end
   end
 
@@ -217,6 +310,7 @@ class File < IO::FileDescriptor
 
     path.check_no_null_byte
 
+<<<<<<< HEAD
     last = path.size - 1
     last -= 1 if path[last] == SEPARATOR
 
@@ -225,6 +319,22 @@ class File < IO::FileDescriptor
       path[index + 1, last - index]
     else
       path
+=======
+    ifdef darwin || linux
+      last = filename.length - 1
+      last -= 1 if filename[last] == SEPARATOR
+
+      index = filename.rindex(SEPARATOR, last)
+      if index
+        filename[index + 1, last - index]
+      else
+        filename
+      end
+    elsif windows
+      buf :: UInt16[256]
+      LibC.wsplitpath(filename.to_utf16, nil, nil, buf, nil)
+      String.new buf.buffer
+>>>>>>> refs/remotes/origin/windows
     end
   end
 
@@ -242,6 +352,7 @@ class File < IO::FileDescriptor
     basename
   end
 
+<<<<<<< HEAD
   # Delete the file at *path*. Deleting non-existent file will raise an exception.
   #
   # ```
@@ -251,11 +362,20 @@ class File < IO::FileDescriptor
   # ```
   def self.delete(path)
     err = LibC.unlink(path.check_no_null_byte)
+=======
+  def self.delete(filename)
+    ifdef darwin || linux
+      err = LibC.unlink(filename)
+    elsif windows
+      err = LibC.wunlink(filename.to_utf16)
+    end
+>>>>>>> refs/remotes/origin/windows
     if err == -1
       raise Errno.new("Error deleting file '#{path}'")
     end
   end
 
+<<<<<<< HEAD
   # Returns *filename*'s extension, or an empty string if it has no extension.
   #
   # ```
@@ -291,9 +411,36 @@ class File < IO::FileDescriptor
         path = home + path[1..-1]
       elsif path.size < 2
         return home
-      end
-    end
+=======
+  def self.extname(filename)
+    ifdef darwin || linux
+      dot_index = filename.rindex('.')
 
+      if dot_index && dot_index != filename.length - 1  && filename[dot_index - 1] != SEPARATOR
+        filename[dot_index, filename.length - dot_index]
+      else
+        ""
+      end
+    elsif windows
+      buf :: UInt16[256]
+      LibC.wsplitpath(filename.to_utf16, nil, nil, nil, buf)
+      String.new buf.buffer
+    end
+  end
+
+  def self.expand_path(path, dir = nil)
+    ifdef darwin || linux
+      if path.starts_with?('~')
+        home = ENV["HOME"]
+        if path.length >= 2 && path[1] == '/'
+          path = home + path[1..-1]
+        elsif path.length < 2
+          return home
+        end
+>>>>>>> refs/remotes/origin/windows
+      end
+
+<<<<<<< HEAD
     unless path.starts_with?(SEPARATOR)
       dir = dir ? expand_path(dir) : Dir.current
       path = "#{dir}#{SEPARATOR}#{path}"
@@ -309,9 +456,33 @@ class File < IO::FileDescriptor
         items.pop?
       else
         items << part
+=======
+      unless path.starts_with?('/')
+        dir = dir ? expand_path(dir) : Dir.working_directory
+        path = "#{dir}/#{path}"
       end
-    end
 
+      ifdef windows
+        path = path.tr("\\", "/")
+      end
+
+      parts = path.split('/')
+      was_letter = false
+      first_slash = true
+      items = [] of String
+      parts.each do |part|
+        if part.empty? && !was_letter
+          items << part if !first_slash
+        elsif part == ".."
+          items.pop if items.size > 0
+        elsif !part.empty? && part != "."
+          was_letter = true
+          items << part
+        end
+>>>>>>> refs/remotes/origin/windows
+      end
+
+<<<<<<< HEAD
     String.build do |str|
       ifdef !windows
         str << SEPARATOR_STRING
@@ -350,6 +521,17 @@ class File < IO::FileDescriptor
       else
         raise Errno.new("stat")
       end
+=======
+      ifdef windows
+        items.join("/")
+      else
+        "/" + items.join("/")
+      end
+    elsif windows
+      #-- what is `expand_path` actually expected to do?
+      fullpath = LibC.wfullpath(nil, path.to_utf16, 0_u32)
+      String.new(fullpath).tap { LibC.free(fullpath as Void*) }
+>>>>>>> refs/remotes/origin/windows
     end
     (stat.st_mode & LibC::S_IFMT) == LibC::S_IFLNK
   end
@@ -479,7 +661,11 @@ class File < IO::FileDescriptor
 
         str.write part.unsafe_byte_slice(byte_start, byte_count)
       end
+<<<<<<< HEAD
     end
+=======
+    end.compact.join(SEPARATOR)
+>>>>>>> refs/remotes/origin/windows
   end
 
   # Returns the size of *filename* bytes.
@@ -493,11 +679,20 @@ class File < IO::FileDescriptor
   # File.rename("afile", "afile.cr")
   # ```
   def self.rename(old_filename, new_filename)
+<<<<<<< HEAD
     code = LibC.rename(old_filename.check_no_null_byte, new_filename.check_no_null_byte)
     if code != 0
+=======
+    ifdef darwin || linux
+      status = LibC.rename(old_filename, new_filename)
+    elsif windows
+      status = LibC.wrename(old_filename.to_utf16, new_filename.to_utf16)
+    end
+    if status != 0
+>>>>>>> refs/remotes/origin/windows
       raise Errno.new("Error renaming file '#{old_filename}' to '#{new_filename}'")
     end
-    code
+    status
   end
 
   # Return the size in bytes of the currently opened file.

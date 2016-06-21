@@ -226,8 +226,18 @@ module Crystal
 
           codegen_single_unit(program, first_unit, target_triple, multithreaded)
 
+<<<<<<< HEAD
           if emit = @emit
             first_unit.emit(emit, original_output_filename || output_filename)
+=======
+          if jobs_count >= @n_threads
+            ifdef darwin || linux
+              LibC.waitpid(-1, out stat_loc, 0)
+            elsif windows
+              puts "#-- LibC.waitpid 1"
+            end
+            jobs_count -= 1
+>>>>>>> refs/remotes/origin/windows
           end
         else
           codegen_many_units(program, units, target_triple, multithreaded)
@@ -252,12 +262,21 @@ module Crystal
       jobs_count = 0
       wait_channel = Channel(Nil).new(@n_threads)
 
+<<<<<<< HEAD
       while unit = units.pop?
         fork_and_codegen_single_unit(program, unit, target_triple, multithreaded, wait_channel)
         jobs_count += 1
 
         if jobs_count >= @n_threads
           wait_channel.receive
+=======
+        while jobs_count > 0
+          ifdef darwin || linux
+            LibC.waitpid(-1, out stat_loc, 0)
+          elsif windows
+            puts "#-- LibC.waitpid 2"
+          end
+>>>>>>> refs/remotes/origin/windows
           jobs_count -= 1
         end
       end

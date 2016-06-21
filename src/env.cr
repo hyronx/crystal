@@ -1,4 +1,19 @@
+<<<<<<< HEAD
 require "c/stdlib"
+=======
+lib LibC
+  ifdef darwin || linux
+    $environ : UInt8**
+    fun getenv(name : UInt8*) : UInt8*?
+    fun setenv(name : UInt8*, value : UInt8*, overwrite : Int32) : Int32
+    fun unsetenv(name : UInt8*) : Int32
+  elsif windows
+    $wenviron = _wenviron : UInt16**
+    fun wgetenv = _wgetenv(name : UInt16*) : UInt16*?
+    fun wputenv = _wputenv_s(name : UInt16*, value : UInt16*) : Int32
+  end
+end
+>>>>>>> refs/remotes/origin/windows
 
 # `ENV` is a hash-like accessor for environment variables.
 #
@@ -55,6 +70,7 @@ module ENV
     end
   end
 
+<<<<<<< HEAD
   # Retrieves a value corresponding to the given *key*. Return the second argument's value
   # if the key does not exist.
   def self.fetch(key, default)
@@ -91,7 +107,44 @@ module ENV
       value
     else
       nil
+=======
+  def self.[]?(key : String)
+    ifdef darwin || linux
+      str = LibC.getenv(key)
+    elsif windows
+        str = LibC.wgetenv(key.to_utf16)
     end
+    str ? String.new(str) : nil
+  end
+
+  def self.[]=(key : String, value : String)
+    ifdef darwin || linux
+      LibC.setenv(key, value, 1)
+    elsif windows
+      LibC.wputenv(key.to_utf16, value.to_utf16)
+    end
+  end
+
+  def self.has_key?(key : String)
+    ifdef darwin || linux
+      !!LibC.getenv(key)
+    elsif windows
+      !!LibC.wgetenv(key.to_utf16)
+    end
+  end
+
+  ifdef darwin || linux
+    def self.delete(key : String)
+      if value = self[key]?
+        LibC.unsetenv(key)
+        value
+      else
+        nil
+      end
+>>>>>>> refs/remotes/origin/windows
+    end
+  elsif windows
+    #-- TODO
   end
 
   # Iterates over all `KEY=VALUE` pairs of environment variables, yielding both
@@ -101,7 +154,11 @@ module ENV
   #       puts "#{key} => #{value}"
   #     end
   def self.each
-    environ_ptr = LibC.environ
+    ifdef darwin || linux
+      environ_ptr = LibC.environ
+    elsif windows
+      environ_ptr = LibC.wenviron
+    end
     while environ_ptr
       environ_value = environ_ptr.value
       if environ_value

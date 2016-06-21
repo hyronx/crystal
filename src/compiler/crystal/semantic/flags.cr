@@ -1,6 +1,14 @@
 class Crystal::Program
   def flags
+<<<<<<< HEAD
     @flags ||= parse_flags(target_machine.triple.split('-'))
+=======
+    @flags ||= ifdef linux || darwin
+                 parse_flags(`uname -m -s`)
+               elsif windows
+                 parse_flags("windows x86")
+               end
+>>>>>>> refs/remotes/origin/windows
   end
 
   def flags=(flags)

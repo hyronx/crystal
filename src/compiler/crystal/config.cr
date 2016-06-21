@@ -1,5 +1,6 @@
 module Crystal
   module Config
+<<<<<<< HEAD
     def self.path
       {{env("CRYSTAL_CONFIG_PATH") || ""}}
     end
@@ -51,5 +52,15 @@ module Crystal
     def self.date
       {{ `date "+%Y-%m-%d"`.stringify.chomp }}
     end
+=======
+    PATH = {{ env("CRYSTAL_CONFIG_PATH") || "" }}
+
+    VERSION =
+      ifdef linux || darwin
+        {{ env("CRYSTAL_CONFIG_VERSION") || `(git describe --tags --long 2>/dev/null)`.stringify.chomp }}
+      else
+        {{ env("CRYSTAL_CONFIG_VERSION") || "0.6.1-win32".stringify.chomp }}
+      end
+>>>>>>> refs/remotes/origin/windows
   end
 end

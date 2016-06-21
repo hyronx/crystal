@@ -63,6 +63,7 @@ module IO
     end
   end
 
+<<<<<<< HEAD
   def read_nonblock(size)
     before = LibC.fcntl(fd, LibC::F_GETFL)
     LibC.fcntl(fd, LibC::F_SETFL, before | LibC::O_NONBLOCK)
@@ -76,10 +77,32 @@ module IO
           raise Errno.new "exception in read_nonblock"
         else
           {read_size.to_i, 0}
+=======
+  ifdef darwin || linux
+    def read_nonblock(length)
+      before = LibC.fcntl(fd, LibC::FCNTL::F_GETFL)
+      LibC.fcntl(fd, LibC::FCNTL::F_SETFL, before | LibC::O_NONBLOCK)
+
+      begin
+        String.new(length) do |buffer|
+          read_length = read Slice.new(buffer, length)
+          if read_length == 0
+            raise "read_nonblock: read nothing"
+          elsif LibC.errno == LibC::EWOULDBLOCK
+            raise Errno.new "exception in read_nonblock"
+          else
+            {read_length.to_i, 0}
+          end
+>>>>>>> refs/remotes/origin/windows
         end
+      ensure
+        LibC.fcntl(fd, LibC::FCNTL::F_SETFL, before)
       end
+<<<<<<< HEAD
     ensure
       LibC.fcntl(fd, LibC::F_SETFL, before)
+=======
+>>>>>>> refs/remotes/origin/windows
     end
   end
 end

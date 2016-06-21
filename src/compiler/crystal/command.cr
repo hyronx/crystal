@@ -413,6 +413,7 @@ class Crystal::Command
     {config, result}
   end
 
+<<<<<<< HEAD
   private def execute(output_filename, run_args)
     begin
       Process.run(output_filename, args: run_args, input: true, output: true, error: true) do |process|
@@ -440,6 +441,17 @@ class Crystal::Command
       end
 
       exit 1
+=======
+  private def self.execute(output_filename, run_args)
+    # TODO: fix system to make output flush on newline if it's a tty
+    ifdef darwin || linux
+      exit_status = LibC.system("#{output_filename} #{run_args.map(&.inspect).join(" ")}")
+    elsif windows
+      exit_status = LibC.wsystem("#{output_filename} #{run_args.map(&.inspect).join(" ")}".to_utf16)
+    end
+    if exit_status != 0
+      puts "Program terminated abnormally with error code: #{exit_status}"
+>>>>>>> refs/remotes/origin/windows
     end
   end
 
