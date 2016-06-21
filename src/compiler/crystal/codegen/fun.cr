@@ -182,11 +182,12 @@ class Crystal::CodeGenVisitor
       offset = 0
     end
 
-    no_inline = setup_context_fun(mangled_name, target_def, llvm_args_types, llvm_return_type)
+    no_export = setup_context_fun(mangled_name, target_def, llvm_args_types, llvm_return_type)
 
-    if @single_module && !no_inline
+    if @single_module && no_export
+      old_linkage = context.fun.linkage
       context.fun.linkage = LLVM::Linkage::Internal
-    end
+    end   
 
     args.each_with_index do |arg, i|
       param = context.fun.params[i + offset]
@@ -295,13 +296,16 @@ class Crystal::CodeGenVisitor
     )
     context.fun.add_attribute LLVM::Attribute::NoReturn if target_def.no_returns?
 
-    no_inline = false
+    no_export = true
     target_def.attributes.try &.each do |attribute|
       case attribute.name
+      when "Export"
+        context.fun.linkage = LLVM::Linkage::External
+        no_export = false
       when "NoInline"
         context.fun.add_attribute LLVM::Attribute::NoInline
         context.fun.linkage = LLVM::Linkage::External
-        no_inline = true
+        no_export = false
       when "AlwaysInline"
         context.fun.add_attribute LLVM::Attribute::AlwaysInline
       when "ReturnsTwice"
@@ -310,7 +314,7 @@ class Crystal::CodeGenVisitor
         context.fun.add_attribute LLVM::Attribute::Naked
       end
     end
-    no_inline
+    no_export
   end
 
   def setup_closure_vars(closure_vars, context = self.context, closure_ptr = fun_literal_closure_ptr)

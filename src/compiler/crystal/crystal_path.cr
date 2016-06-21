@@ -6,11 +6,18 @@ module Crystal
       ENV["CRYSTAL_PATH"]? || Crystal::Config.path
     end
 
-    @crystal_path : Array(String)
+    def self.default_libs_path
+      ENV["CRYSTAL_LIBS_PATH"]? || "/usr/local/lib/crystal"
+    end
 
-    def initialize(path = CrystalPath.default_path, target_triple = LLVM.default_target_triple)
+    @crystal_path : Array(String)
+    @crystal_libs_path : Array(String)
+
+    def initialize(path = CrystalPath.default_path, target_triple = LLVM.default_target_triple, libs_path = CrystalPath.default_libs_path)
       @crystal_path = path.split(':').reject &.empty?
       add_target_path(target_triple)
+
+      @crystal_libs_path = libs_path.split(':').reject &.empty?
     end
 
     private def add_target_path(target_triple = LLVM.default_target_triple)
@@ -44,6 +51,17 @@ module Crystal
         result = find_in_path_relative_to_dir(filename, relative_to)
       else
         result = find_in_crystal_path(filename, relative_to)
+      end
+      result = [result] if result.is_a?(String)
+      result
+    end
+
+    def find_lib(filename, relative_to = nil)
+      relative_to = File.dirname(relative_to) if relative_to.is_a?(String)
+      if filename.starts_with? '.'
+        result = find_lib_in_path_relative_to_dir(filename, relative_to)
+      else
+        result = find_lib_in_crystal_path(filename, relative_to)
       end
       result = [result] if result.is_a?(String)
       result
@@ -84,6 +102,49 @@ module Crystal
 
       if check_crystal_path
         find_in_crystal_path filename, relative_to
+      else
+        nil
+      end
+    end
+
+    private def find_lib_in_path_relative_to_dir(filename, relative_to, check_crystal_path = true)
+      if relative_to.is_a?(String)
+        # Check if it's a wildcard.
+        if filename.ends_with?("/*") || (recursive = filename.ends_with?("/**"))
+          filename_dir_index = filename.rindex('/').not_nil!
+          filename_dir = filename[0..filename_dir_index]
+
+          # Extracts the actual name of the directory 
+          # which should be the same like the library searched for.
+          filename_index = filename.rindex('/', filename_dir_index - 1).not_nil!
+          filename = filename[filename_index..filename_dir_index]
+          if filename.starts_with?("lib")
+            filename = "lib" + filename
+          end
+          
+          if filename.ends_with?(".so")
+            filename += ".so"
+          end
+
+          relative_path = "#{relative_to}/#{filename_dir}/#{filename}"
+          return relative_path if File.exists?(relative_path)
+        else
+          if filename.starts_with?("lib")
+            filename = "lib" + filename
+          end
+
+          relative_filename = "#{relative_to}/#{filename}"
+
+          # Check if .so file exists.
+          relative_filename_so = relative_filename.ends_with?(".so") ? relative_filename : "#{relative_filename}.so"
+          if File.exists?(relative_filename_so)
+            return make_relative_unless_absolute relative_filename_so
+          end
+        end
+      end
+
+      if check_crystal_path
+        find_lib_in_crystal_path filename, relative_to
       else
         nil
       end
@@ -134,6 +195,13 @@ module Crystal
         raise "can't find file '#{filename}' relative to '#{relative_to}'"
       else
         raise "can't find file '#{filename}'"
+      end
+    end
+
+    private def find_lib_in_crystal_path(filename, relative_to)
+      @crystal_libs_path.each do |path|
+        library = find_lib_in_path_relative_to_dir(filename, path, check_crystal_path: false)
+        return library if library
       end
     end
   end

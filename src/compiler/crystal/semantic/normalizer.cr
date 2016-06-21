@@ -228,6 +228,7 @@ module Crystal
       location = node.location
       filenames = @program.find_in_path(node.string, location.try &.filename)
       if filenames
+        # library = @program.find_lib_in_path(node.string, location.try &.filename)
         nodes = Array(ASTNode).new(filenames.size)
         filenames.each do |filename|
           if @program.add_to_requires(filename)

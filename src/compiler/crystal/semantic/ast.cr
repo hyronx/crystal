@@ -380,6 +380,7 @@ module Crystal
     getter special_vars : Set(String)?
     property block_nest = 0
     property? captured_block = false
+    property external = false
 
     # Is this a `new` method that was expanded from an initialize?
     property? new = false

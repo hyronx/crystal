@@ -425,6 +425,10 @@ module Crystal
       crystal_path.find filename, relative_to
     end
 
+    def find_lib_in_path(filename, relative_to = nil)
+      crystal_path.find_lib filename, relative_to
+    end
+
     {% for name in %w(object no_return value number reference void nil bool char int int8 int16 int32 int64
                      uint8 uint16 uint32 uint64 float float32 float64 string symbol pointer array static_array
                      exception tuple named_tuple proc union enum range regex crystal) %}

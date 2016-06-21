@@ -362,6 +362,7 @@ module Crystal
                     end
 
       node.raises = true if node.has_attribute?("Raises")
+      node.external = true if node.has_attribute?("Export")
 
       if node.abstract?
         if (target_type.class? || target_type.struct?) && !target_type.abstract?
