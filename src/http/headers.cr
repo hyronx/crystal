@@ -3,9 +3,7 @@
 # Two headers are considered the same if their downcase representation is the same
 # (in which `_` is the downcase version of `-`).
 struct HTTP::Headers
-  {% if Crystal::VERSION == "0.18.0" %}
-    include Enumerable({String, Array(String)})
-  {% end %}
+  include Enumerable({String, Array(String)})
 
   # :nodoc:
   record Key, name : String do
@@ -40,7 +38,7 @@ struct HTTP::Headers
     end
 
     private def normalize_byte(byte)
-      char = byte.chr
+      char = byte.unsafe_chr
 
       return byte if char.lowercase? || char == '-' # Optimize the common case
       return byte + 32 if char.uppercase?
@@ -181,15 +179,9 @@ struct HTTP::Headers
   end
 
   def each
-    {% if Crystal::VERSION == "0.18.0" %}
-      @hash.each do |key, value|
-        yield({key.name, value})
-      end
-    {% else %}
-      @hash.each do |key, value|
-        yield key.name, value
-      end
-    {% end %}
+    @hash.each do |key, value|
+      yield({key.name, value})
+    end
   end
 
   def get(key)
@@ -218,9 +210,7 @@ struct HTTP::Headers
 
   def to_s(io : IO)
     io << "HTTP::Headers{"
-    # TODO: use each_with_index
-    index = 0
-    @hash.each do |key, values|
+    @hash.each_with_index do |(key, values), index|
       io << ", " if index > 0
       key.name.inspect(io)
       io << " => "
@@ -229,7 +219,6 @@ struct HTTP::Headers
       else
         values.inspect(io)
       end
-      index += 1
     end
     io << "}"
   end
@@ -268,7 +257,7 @@ struct HTTP::Headers
     # are '\t', ' ', all US-ASCII printable characters and
     # range from '\x80' to '\xff' (but the last is obsoleted.)
     value.each_byte do |byte|
-      char = byte.chr
+      char = byte.unsafe_chr
       next if char == '\t'
       if char < ' ' || char > '\u{ff}' || char == '\u{7e}'
         raise ArgumentError.new("header content contains invalid character #{char.inspect}")

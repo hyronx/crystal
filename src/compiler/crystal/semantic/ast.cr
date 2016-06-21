@@ -23,6 +23,7 @@ module Crystal
     property input_observer : Call?
 
     @dirty = false
+    @propagating_after_cleanup = false
 
     @type : Type?
 
@@ -189,6 +190,7 @@ module Crystal
     end
 
     def update(from)
+      return if @propagating_after_cleanup
       return if @type.same? from.type?
 
       if dependencies.size == 1 || !@type
@@ -197,7 +199,47 @@ module Crystal
         new_type = Type.merge dependencies
       end
 
-      return if @type.same? new_type
+      if @type.same? new_type
+        # If we are in the cleanup phase it might happen that a dependency's
+        # type changed (from) but our type didn't. This might happen if
+        # there's a circular dependencies in nodes (while and blocks can
+        # cause this), so we basically need to recompute all types in the
+        # cycle (and depending types).
+        #
+        # To solve this, we set our type to NoReturn so observers
+        # compute their type without taking this note into account.
+        # Later, we compute our type from our dependencies and propagate
+        # types as usual.
+        #
+        # To avoid infinite recursion we use the `@propagating_after_cleanup`
+        # flag, which prevents computing and propagating types for this
+        # node while we are doing the above logic.
+        if dependencies.size > 0 && (from_type = from.type?) && from_type.program.in_cleanup_phase?
+          set_type(from_type.program.no_return)
+
+          @propagating_after_cleanup = true
+          @dirty = true
+          propagate
+
+          new_type = Type.merge dependencies
+          if new_type
+            set_type_from(map_type(new_type), from)
+          else
+            unless @type
+              @propagating_after_cleanup = false
+              return
+            end
+            set_type(nil)
+          end
+
+          @dirty = true
+          propagate
+          @propagating_after_cleanup = false
+          return
+        else
+          return
+        end
+      end
 
       if new_type
         set_type_from(map_type(new_type), from)
@@ -846,6 +888,7 @@ module Crystal
       io << " (nil-if-read)" if nil_if_read
       io << " (closured)" if closured
       io << " (assigned-to)" if assigned_to
+      io << " (object id: #{object_id})"
     end
   end
 
@@ -914,17 +957,16 @@ module Crystal
     end
   end
 
-  # Ficticious node to bind yield expressions to block arguments
+  # Fictitious node to bind yield expressions to block arguments
   class YieldBlockBinder < ASTNode
     getter block
-    property yield_vars : Array(Var)?
 
     def initialize(@mod : Program, @block : Block)
-      @yields = [] of Yield
+      @yields = [] of {Yield, Array(Var)?}
     end
 
-    def add_yield(node : Yield)
-      @yields << node
+    def add_yield(node : Yield, yield_vars : Array(Var)?)
+      @yields << {node, yield_vars}
       node.exps.each &.add_observer(self)
     end
 
@@ -933,9 +975,8 @@ module Crystal
       args_size = block.args.size
       block_arg_types = Array(Array(Type)?).new(args_size, nil)
       splat_index = block.splat_index
-      yield_vars = @yield_vars
 
-      @yields.each do |a_yield|
+      @yields.each do |(a_yield, yield_vars)|
         i = 0
 
         # Gather all exps types and then assign to block_arg_types.
