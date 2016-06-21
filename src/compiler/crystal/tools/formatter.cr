@@ -674,7 +674,14 @@ module Crystal
           current_element = current_element.key
         end
 
-        if prefix == :"{" && i == 0 && !wrote_newline && (current_element.is_a?(TupleLiteral) || current_element.is_a?(NamedTupleLiteral) || current_element.is_a?(HashLiteral))
+        if prefix == :"{" && i == 0 && !wrote_newline && (
+             current_element.is_a?(TupleLiteral) ||
+             current_element.is_a?(NamedTupleLiteral) ||
+             current_element.is_a?(HashLiteral) ||
+             current_element.is_a?(MacroExpression) ||
+             current_element.is_a?(MacroIf) ||
+             current_element.is_a?(MacroFor)
+           )
           write " "
           write_space_at_end = true
         end
@@ -3829,6 +3836,8 @@ module Crystal
         after_comment_value = raw_after_comment_value.strip
         if after_comment_value.starts_with?("=>")
           value = "\# => #{after_comment_value[2..-1].strip}"
+        elsif after_comment_value.each_char.all? { |c| c.whitespace? || c == '#' }
+          # Nothing, leave sequences of whitespaces and '#' as is
         else
           char_1 = value[1]?
           if char_1 && !char_1.whitespace?

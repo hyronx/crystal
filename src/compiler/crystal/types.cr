@@ -503,7 +503,7 @@ module Crystal
       to_s_with_options(io)
     end
 
-    abstract def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    abstract def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
   end
 
   # A type that has a name and can be contained inside other types.
@@ -539,7 +539,7 @@ module Crystal
       String.build { |io| append_full_name(io) }
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       append_full_name(io)
     end
   end
@@ -1343,7 +1343,7 @@ module Crystal
       true
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       io << "NoReturn"
     end
   end
@@ -1353,7 +1353,7 @@ module Crystal
       true
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       io << "Void"
     end
   end
@@ -1534,7 +1534,7 @@ module Crystal
       end
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       super
       if generic_args
         io << "("
@@ -1634,7 +1634,7 @@ module Crystal
       end
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       super
       if generic_args
         io << "("
@@ -1762,7 +1762,7 @@ module Crystal
       program.after_inference_types << self
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       generic_class.append_full_name(io)
       io << "("
       i = 0
@@ -1773,10 +1773,13 @@ module Crystal
             tuple = type_var.type.as(TupleInstanceType)
             tuple.tuple_types.each_with_index do |tuple_type, j|
               io << ", " if j > 0
-              tuple_type.to_s(io)
+              tuple_type = tuple_type.devirtualize unless codegen
+              tuple_type.to_s_with_options(io, codegen: codegen)
             end
           else
-            type_var.type.to_s_with_options(io, skip_union_parens: true)
+            type_var_type = type_var.type
+            type_var_type = type_var_type.devirtualize unless codegen
+            type_var_type.to_s_with_options(io, skip_union_parens: true, codegen: codegen)
           end
         else
           type_var.to_s(io)
@@ -1964,13 +1967,14 @@ module Crystal
       tuple_types.any? { |tuple_type| tuple_type.includes_type?(type) || tuple_type.has_in_type_vars?(type) }
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      io << "{"
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
+      io << "Tuple("
       @tuple_types.each_with_index do |tuple_type, i|
         io << ", " if i > 0
-        tuple_type.to_s_with_options(io, skip_union_parens: true)
+        tuple_type = tuple_type.devirtualize unless codegen
+        tuple_type.to_s_with_options(io, skip_union_parens: true, codegen: codegen)
       end
-      io << "}"
+      io << ")"
     end
 
     def type_desc
@@ -2073,8 +2077,8 @@ module Crystal
       true
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      io << "{"
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
+      io << "NamedTuple("
       @entries.each_with_index do |entry, i|
         io << ", " if i > 0
         if Symbol.needs_quotes?(entry.name)
@@ -2083,9 +2087,11 @@ module Crystal
           io << entry.name
         end
         io << ": "
-        entry.type.to_s_with_options(io, skip_union_parens: true)
+        entry_type = entry.type
+        entry_type = entry_type.devirtualize unless codegen
+        entry_type.to_s_with_options(io, skip_union_parens: true, codegen: codegen)
       end
-      io << "}"
+      io << ")"
     end
 
     def type_desc
@@ -2137,7 +2143,7 @@ module Crystal
       end
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       @module.to_s(io)
       io << "("
       @including_class.to_s(io)
@@ -2219,7 +2225,7 @@ module Crystal
       end
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       @extended_class.to_s(io)
       io << "("
       @extending_class.to_s(io)
@@ -2621,7 +2627,14 @@ module Crystal
       instance_type.virtual_type!.metaclass
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def remove_typedef
+      if instance_type.is_a?(TypeDefType)
+        return instance_type.remove_typedef.metaclass
+      end
+      self
+    end
+
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       io << @name
     end
   end
@@ -2662,7 +2675,7 @@ module Crystal
       instance_type
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       instance_type.to_s(io)
       io << ":Class"
     end
@@ -2807,16 +2820,19 @@ module Crystal
       self == other_type || union_types.all?(&.implements?(other_type))
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      # Use T? if this is a nilable type with just two types inside it
-      if @union_types.size == 2 && @union_types.last.is_a?(NilType)
-        io << @union_types.first
-        io << "?"
-        return
-      end
-
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       io << "(" unless skip_union_parens
-      names = @union_types.join(" | ", io)
+      union_types = @union_types
+      # Make sure to put Nil at the end
+      if nil_type_index = @union_types.index(&.nil_type?)
+        union_types = @union_types.dup
+        union_types << union_types.delete_at(nil_type_index)
+      end
+      union_types.each_with_index do |type, i|
+        io << " | " if i > 0
+        type = type.devirtualize unless codegen
+        type.to_s_with_options(io, codegen: codegen)
+      end
       io << ")" unless skip_union_parens
     end
 
@@ -2843,11 +2859,6 @@ module Crystal
 
     def primitive_like?
       true
-    end
-
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      not_nil_type.to_s(io)
-      io << "?"
     end
   end
 
@@ -2881,13 +2892,6 @@ module Crystal
     def proc_type
       @union_types.last.remove_typedef.as(ProcInstanceType)
     end
-
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      io << "("
-      @union_types.last.to_s(io)
-      io << ")"
-      io << "?"
-    end
   end
 
   # A union type of nil and a single pointer type.
@@ -2902,11 +2906,6 @@ module Crystal
 
     def pointer_type
       @union_types.last.remove_typedef.as(PointerInstanceType)
-    end
-
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      @union_types.last.to_s(io)
-      io << "?"
     end
   end
 
@@ -3094,7 +3093,7 @@ module Crystal
       nil
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
       base_type.to_s(io)
       io << "+"
     end
@@ -3167,8 +3166,8 @@ module Crystal
       nil
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      instance_type.to_s(io)
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
+      instance_type.to_s_with_options(io, codegen: codegen)
       io << ":Class"
     end
   end
@@ -3252,14 +3251,16 @@ module Crystal
       super
     end
 
-    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true)
-      io << "("
+    def to_s_with_options(io : IO, skip_union_parens : Bool = false, generic_args : Bool = true, codegen = false)
+      io << "Proc("
       arg_types.each_with_index do |type, i|
-        io << ", " if i > 0
-        type.to_s(io)
+        type = type.devirtualize unless codegen
+        type.to_s_with_options(io, codegen: codegen)
+        io << ", "
       end
-      io << " -> "
-      return_type.to_s(io)
+      return_type = self.return_type
+      return_type = return_type.devirtualize unless codegen
+      return_type.to_s_with_options(io, codegen: codegen)
       io << ")"
     end
   end

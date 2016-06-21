@@ -3,9 +3,7 @@ require "uri"
 module HTTP
   # Represents a collection of http parameters and their respective values.
   struct Params
-    {% if Crystal::VERSION == "0.18.0" %}
-      include Enumerable({String, String})
-    {% end %}
+    include Enumerable({String, String})
 
     # Parses an HTTP query string into a `HTTP::Params`
     #
@@ -35,7 +33,7 @@ module HTTP
       bytesize = query.bytesize
       while i < bytesize
         byte = query.unsafe_byte_at(i)
-        char = byte.chr
+        char = byte.unsafe_chr
 
         case char
         when '='
@@ -218,11 +216,7 @@ module HTTP
     def each
       raw_params.each do |name, values|
         values.each do |value|
-          {% if Crystal::VERSION == "0.18.0" %}
-            yield({name, value})
-          {% else %}
-            yield(name, value)
-          {% end %}
+          yield({name, value})
         end
       end
     end
