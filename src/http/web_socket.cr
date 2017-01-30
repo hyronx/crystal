@@ -55,7 +55,7 @@ class HTTP::WebSocket
   end
 
   protected def check_open
-    raise IO::Error.new "closed socket" if closed?
+    raise IO::Error.new "Closed socket" if closed?
   end
 
   def send(message)
