@@ -816,7 +816,7 @@ abstract class IO
   end
 
   # Same as `gets`, but raises `EOFError` if called at the end of this `IO`.
-  def read_line(*args, **options) : String?
+  def read_line(*args, **options) : String
     gets(*args, **options) || raise EOFError.new
   end
 
