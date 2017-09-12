@@ -99,7 +99,7 @@ class IO::Memory < IO
     slice.copy_to(@buffer + @pos, count)
 
     if @pos > @bytesize
-      Intrinsics.memset((@buffer + @bytesize).as(Void*), 0_u8, (@pos - @bytesize).to_u32, 0_u32, false)
+      (@buffer + @bytesize).clear(@pos - @bytesize)
     end
 
     @pos += count
@@ -123,7 +123,7 @@ class IO::Memory < IO
     (@buffer + @pos).value = byte
 
     if @pos > @bytesize
-      Intrinsics.memset((@buffer + @bytesize).as(Void*), 0_u8, (@pos - @bytesize).to_u32, 0_u32, false)
+      (@buffer + @bytesize).clear(@pos - @bytesize)
     end
 
     @pos += 1
