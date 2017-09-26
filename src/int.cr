@@ -501,9 +501,9 @@ struct Int
     include Iterator(T)
 
     @n : T
-    @index : Int32
+    @index : T
 
-    def initialize(@n : T, @index = 0)
+    def initialize(@n : T, @index = T.zero)
     end
 
     def next
@@ -517,7 +517,7 @@ struct Int
     end
 
     def rewind
-      @index = 0
+      @index = T.zero
       self
     end
   end
