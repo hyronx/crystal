@@ -42,7 +42,7 @@ class Socket < IO
   @read_event : Event::Event?
   @write_event : Event::Event?
 
-  @closed = false
+  @closed : Bool
 
   getter family : Family
   getter type : Type
@@ -67,6 +67,7 @@ class Socket < IO
   end
 
   def initialize(@family, @type, @protocol = Protocol::IP, blocking = false)
+    @closed = false
     fd = LibC.socket(family, type, protocol)
     raise Errno.new("failed to create socket:") if fd == -1
     init_close_on_exec(fd)
@@ -79,6 +80,7 @@ class Socket < IO
   end
 
   protected def initialize(@fd : Int32, @family, @type, @protocol = Protocol::IP, blocking = false)
+    @closed = false
     init_close_on_exec(@fd)
 
     self.sync = true
