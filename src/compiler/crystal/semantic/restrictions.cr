@@ -394,7 +394,7 @@ module Crystal
 
     def restrict(other : Generic, context)
       # Special case: consider `Union(X, Y, ...)` the same as `X | Y | ...`
-      generic_type = context.defining_type.lookup_path other.name
+      generic_type = get_generic_type(other, context)
       if generic_type.is_a?(GenericUnionType)
         return restrict(Union.new(other.type_vars), context)
       end
@@ -544,7 +544,7 @@ module Crystal
     end
 
     def restrict(other : Generic, context)
-      generic_type = context.defining_type.lookup_path other.name
+      generic_type = get_generic_type(other, context)
       generic_type = generic_type.remove_alias if generic_type.is_a? AliasType
       return super unless generic_type == self.generic_type
 
@@ -682,7 +682,7 @@ module Crystal
     end
 
     def restrict(other : Generic, context)
-      generic_type = context.defining_type.lookup_path other.name
+      generic_type = get_generic_type(other, context)
       return super unless generic_type == self.generic_type
 
       generic_type = generic_type.as(TupleType)
@@ -742,7 +742,7 @@ module Crystal
     end
 
     def restrict(other : Generic, context)
-      generic_type = context.defining_type.lookup_path other.name
+      generic_type = get_generic_type(other, context)
       return super unless generic_type == self.generic_type
 
       other_named_args = other.named_args
@@ -1022,7 +1022,7 @@ module Crystal
     end
 
     def restrict(other : Generic, context)
-      generic_type = context.defining_type.lookup_path other.name
+      generic_type = get_generic_type(other, context)
       return super unless generic_type.is_a?(ProcType)
 
       # Consider the case of a splat in the type vars
@@ -1088,5 +1088,14 @@ module Crystal
 
       true
     end
+  end
+end
+
+private def get_generic_type(node, context)
+  name = node.name
+  if name.is_a?(Crystal::Path)
+    context.defining_type.lookup_path name
+  else
+    name.type
   end
 end
