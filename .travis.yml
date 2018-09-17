@@ -14,6 +14,9 @@ matrix:
     - env: ARCH=x86_64 ARCH_CMD=linux64
       os: linux
 
+git:
+  depth: false
+
 before_install:
   - bin/ci prepare_system
 
