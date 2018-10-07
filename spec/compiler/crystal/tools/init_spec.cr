@@ -97,6 +97,7 @@ dependencies:
     github: jsmith/example
 ```})
 
+        readme.should contain(%{and run `shards install`.})
         readme.should contain(%{TODO: Write a description here})
         readme.should_not contain(%{TODO: Write installation instructions here})
         readme.should contain(%{require "example"})
@@ -113,6 +114,7 @@ dependencies:
     github: jsmith/example
 ```})
 
+        readme.should_not contain(%{and run `shards install`.})
         readme.should contain(%{TODO: Write a description here})
         readme.should contain(%{TODO: Write installation instructions here})
         readme.should_not contain(%{require "example"})
