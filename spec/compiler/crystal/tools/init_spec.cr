@@ -91,7 +91,7 @@ module Crystal
       describe_file "example/README.md" do |readme|
         readme.should contain("# example")
 
-        readme.should contain(%{1. Run `shards init`.})
+        readme.should contain(%{1. Run `shards init`})
         readme.should contain(%{2. Add this to your application's `shard.yml`:})
 
         readme.should contain(%{```yaml
@@ -99,7 +99,7 @@ dependencies:
   example:
     github: jsmith/example
 ```})
-        readme.should contain(%{3. Run `shards install`.})
+        readme.should contain(%{3. Run `shards install`})
         readme.should contain(%{TODO: Write a description here})
         readme.should_not contain(%{TODO: Write installation instructions here})
         readme.should contain(%{require "example"})
@@ -112,7 +112,7 @@ dependencies:
 
         readme.should contain(%{TODO: Write a description here})
 
-        readme.should_not contain(%{1. Run `shards init`.})
+        readme.should_not contain(%{1. Run `shards init`})
         readme.should_not contain(%{2. Add this to your application's `shard.yml`:})
 
         readme.should_not contain(%{```yaml
@@ -120,7 +120,7 @@ dependencies:
   example:
     github: jsmith/example
 ```})
-        readme.should_not contain(%{3. Run `shards install`.})
+        readme.should_not contain(%{3. Run `shards install`})
         readme.should contain(%{TODO: Write installation instructions here})
         readme.should_not contain(%{require "example"})
         readme.should contain(%{1. Fork it (<https://github.com/jsmith/example_app/fork>)})
