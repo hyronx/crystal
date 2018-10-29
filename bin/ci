@@ -1,8 +1,18 @@
-#!/bin/bash
+#!/bin/sh
 
 fail() {
   echo "${@}" >&2
   exit 1
+}
+
+on_tag() {
+  if [ -n "$CURRENT_TAG" ]; then
+    echo "${@}"
+    eval "${@}"
+    return $?
+  else
+    return 0
+  fi
 }
 
 fail_on_error() {
@@ -56,16 +66,40 @@ on_osx() {
 }
 
 prepare_system() {
+  on_linux 'echo '"'"'{"ipv6":true, "fixed-cidr-v6":"2001:db8:1::/64"}'"'"' | sudo tee /etc/docker/daemon.json'
+  on_linux sudo service docker restart
+
   on_osx brew update
+}
+
+build() {
+  with_build_env 'make std_spec clean'
+  with_build_env 'make crystal std_spec compiler_spec docs'
+  with_build_env 'find samples -name "*.cr" | xargs -L 1 ./bin/crystal build --no-codegen'
+  with_build_env './bin/crystal tool format --check samples spec src'
 }
 
 prepare_build() {
   on_linux verify_linux_environment
 
-  on_linux docker pull "jhass/crystal-build-$ARCH"
+  on_osx brew install crystal
 
-  on_osx brew install libevent crystal-lang
-  on_osx /bin/bash -c "'curl \"http://crystal-lang.s3.amazonaws.com/llvm/llvm-3.5.0-1-darwin-x86_64.tar.gz\" | tar xz -C /tmp'"
+  # Make sure binaries from llvm are available in PATH
+  on_osx brew install jq
+  on_osx OSX_LLVM_PACKAGE=`brew info --json=v1 crystal | jq '.[].dependencies | .[] | select(startswith("llvm"))'`
+  on_osx brew link --force $OSX_LLVM_PACKAGE
+
+  on_tag verify_version
+}
+
+verify_version() {
+  # If building a tag, check it matches with file
+  FILE_VERSION=`cat VERSION`
+
+  if [ "$FILE_VERSION" != "$CURRENT_TAG" ]
+  then
+    fail "VERSION ($FILE_VERSION) does not match GIT TAG ($CURRENT_TAG)"
+  fi
 }
 
 with_build_env() {
@@ -75,18 +109,31 @@ with_build_env() {
   export TZ="America/New_York"
 
   on_linux verify_linux_environment
-  on_linux docker run \
-    --rm \
-    -u $(id -u) \
-    -v $(pwd):/mnt \
-    -w /mnt \
-    -e LIBRARY_PATH="/opt/crystal/embedded/lib/" \
-    "jhass/crystal-build-$ARCH" \
-    "$ARCH_CMD" /bin/bash -c "'$command'"
 
-  on_osx PATH="/tmp/llvm-3.5.0-1/bin:\$PATH" \
+  export DOCKER_TEST_PREFIX="crystallang/crystal:0.26.1"
+
+  case $ARCH in
+    x86_64)
+      export DOCKER_TEST_IMAGE="$DOCKER_TEST_PREFIX-build"
+      ;;
+    i386)
+      export DOCKER_TEST_IMAGE="$DOCKER_TEST_PREFIX-i386-build"
+      ;;
+  esac
+
+  on_linux docker run \
+    --rm -t \
+    -u $(id -u) \
+    -v $PWD:/mnt \
+    -w /mnt \
+    -e CRYSTAL_CACHE_DIR="/tmp/crystal" \
+    "$DOCKER_TEST_IMAGE" \
+    "$ARCH_CMD" /bin/sh -c "'$command'"
+
+  on_osx sudo systemsetup -settimezone $TZ
+  on_osx PATH="/usr/local/opt/llvm/bin:\$PATH" \
     CRYSTAL_CACHE_DIR="/tmp/crystal" \
-    /bin/bash -c "'$command'"
+    /bin/sh -c "'$command'"
 
 }
 
@@ -98,6 +145,7 @@ usage() {
   echo -e "Commands:"
   echo -e "  prepare_system          setup any necessaries repositories etc."
   echo -e "  prepare_build           download and extract any dependencies needed for the build"
+  echo -e "  build                   run specs, build crystal, run format check, build samples, build the docs"
   echo -e "  with_build_env command  run command in the build environment"
   echo -e "  help                    display this"
   echo -e ""
@@ -115,6 +163,9 @@ case $command in
   with_build_env)
     target_command="${@}"
     with_build_env "$target_command"
+    ;;
+  build)
+    build
     ;;
   -h|--help|help)
     usage

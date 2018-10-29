@@ -1,3 +1,6 @@
+{% if flag?(:win32) %}
+  @[Link("libcmt")]
+{% end %}
 lib LibC
   alias Char = UInt8
   alias UChar = Char
@@ -7,13 +10,13 @@ lib LibC
   alias Int = Int32
   alias UInt = UInt32
 
-  ifdef x86_64
-    alias Long = Int64
-    alias ULong = UInt64
-  elsif i686
+  {% if flag?(:win32) || flag?(:i686) || flag?(:arm) %}
     alias Long = Int32
     alias ULong = UInt32
-  end
+  {% elsif flag?(:x86_64) || flag?(:aarch64) %}
+    alias Long = Int64
+    alias ULong = UInt64
+  {% end %}
 
   alias LongLong = Int64
   alias ULongLong = UInt64

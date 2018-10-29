@@ -1,8 +1,11 @@
-require "zlib" ifdef !without_zlib
+{% if !flag?(:without_zlib) %}
+  require "flate"
+  require "gzip"
+{% end %}
 
 module HTTP
   # :nodoc:
-  DATE_PATTERNS = {"%a, %d %b %Y %H:%M:%S %z", "%A, %d-%b-%y %H:%M:%S %z", "%a %b %e %H:%M:%S %Y"}
+  MAX_HEADER_SIZE = 16_384
 
   # :nodoc:
   enum BodyType
@@ -11,17 +14,22 @@ module HTTP
     Mandatory
   end
 
+  SUPPORTED_VERSIONS = {"HTTP/1.0", "HTTP/1.1"}
+
   # :nodoc:
   def self.parse_headers_and_body(io, body_type : BodyType = BodyType::OnDemand, decompress = true)
     headers = Headers.new
 
-    while line = io.gets
-      if line == "\r\n" || line == "\n"
+    headers_size = 0
+    while line = io.gets(MAX_HEADER_SIZE, chomp: true)
+      headers_size += line.bytesize
+      break if headers_size > MAX_HEADER_SIZE
+
+      if line.empty?
         body = nil
         if body_type.prohibited?
           body = nil
-        elsif content_length = headers["Content-Length"]?
-          content_length = content_length.to_u64
+        elsif content_length = content_length(headers)
           if content_length != 0
             # Don't create IO for Content-Length == 0
             body = FixedLengthContent.new(io, content_length)
@@ -33,17 +41,17 @@ module HTTP
         end
 
         if decompress && body
-          ifdef without_zlib
+          {% if flag?(:without_zlib) %}
             raise "Can't decompress because `-D without_zlib` was passed at compile time"
-          else
+          {% else %}
             encoding = headers["Content-Encoding"]?
             case encoding
             when "gzip"
-              body = Zlib::Inflate.gzip(body, sync_close: true)
+              body = Gzip::Reader.new(body, sync_close: true)
             when "deflate"
-              body = Zlib::Inflate.new(body, sync_close: true)
+              body = Flate::Reader.new(body, sync_close: true)
             end
-          end
+          {% end %}
         end
 
         check_content_type_charset(body, headers)
@@ -53,7 +61,7 @@ module HTTP
       end
 
       name, value = parse_header(line)
-      headers.add(name, value)
+      break unless headers.add?(name, value)
     end
   end
 
@@ -69,8 +77,11 @@ module HTTP
   def self.parse_header(line)
     # This is basically
     #
-    #     name, value = line.split ':', 2
-    #     {name, value.lstrip}
+    # ```
+    # line = "Server: nginx"
+    # name, value = line.split ':', 2
+    # {name, value.lstrip} # => {"Server", "nginx"}
+    # ```
     #
     # except that it's faster because we only create 2 strings
     # instead of 3 (two from the split and one for the lstrip),
@@ -85,7 +96,7 @@ module HTTP
 
     # Get where the header value starts (skip space)
     middle_index = colon_index + 1
-    while middle_index < bytesize && cstr[middle_index].unsafe_chr.whitespace?
+    while middle_index < bytesize && cstr[middle_index].unsafe_chr.ascii_whitespace?
       middle_index += 1
     end
 
@@ -106,46 +117,64 @@ module HTTP
 
   # :nodoc:
   def self.serialize_headers_and_body(io, headers, body, body_io, version)
-    # prepare either chunked response headers if protocol supports it
-    # or consume the io to get the Content-Length header
-    unless body
-      if body_io
-        if Client::Response.supports_chunked?(version)
-          headers["Transfer-Encoding"] = "chunked"
-          body = nil
-        else
-          body = body_io.gets_to_end
-          body_io = nil
-        end
-      end
-    end
-
     if body
-      headers["Content-Length"] = body.bytesize.to_s
+      serialize_headers_and_string_body(io, headers, body)
+    elsif body_io
+      content_length = content_length(headers)
+      if content_length
+        serialize_headers(io, headers)
+        copied = IO.copy(body_io, io)
+        if copied != content_length
+          raise ArgumentError.new("Content-Length header is #{content_length} but body had #{copied} bytes")
+        end
+      elsif Client::Response.supports_chunked?(version)
+        headers["Transfer-Encoding"] = "chunked"
+        serialize_headers(io, headers)
+        serialize_chunked_body(io, body_io)
+      else
+        body = body_io.gets_to_end
+        serialize_headers_and_string_body(io, headers, body)
+      end
+    else
+      serialize_headers(io, headers)
     end
+  end
 
+  def self.serialize_headers_and_string_body(io, headers, body)
+    headers["Content-Length"] = body.bytesize.to_s
+    serialize_headers(io, headers)
+    io << body
+  end
+
+  def self.serialize_headers(io, headers)
     headers.each do |name, values|
       values.each do |value|
         io << name << ": " << value << "\r\n"
       end
     end
-
     io << "\r\n"
+  end
 
-    if body
-      io << body
+  def self.serialize_chunked_body(io, body)
+    buf = uninitialized UInt8[8192]
+    while (buf_length = body.read(buf.to_slice)) > 0
+      buf_length.to_s(16, io)
+      io << "\r\n"
+      io.write(buf.to_slice[0, buf_length])
+      io << "\r\n"
     end
+    io << "0\r\n\r\n"
+  end
 
-    if body_io
-      buf = uninitialized UInt8[8192]
-      while (buf_length = body_io.read(buf.to_slice)) > 0
-        buf_length.to_s(16, io)
-        io << "\r\n"
-        io.write(buf.to_slice[0, buf_length])
-        io << "\r\n"
-      end
-      io << "0\r\n\r\n"
+  # :nodoc:
+  def self.content_length(headers)
+    length_headers = headers.get? "Content-Length"
+    return nil unless length_headers
+    first_header = length_headers[0]
+    if length_headers.size > 1 && length_headers.any? { |header| header != first_header }
+      raise ArgumentError.new("Multiple Content-Length headers received did not match: #{length_headers}")
     end
+    first_header.to_u64
   end
 
   # :nodoc:
@@ -185,6 +214,12 @@ module HTTP
           key = piece[0...eq_index].strip
           if key == "charset"
             value = piece[eq_index + 1..-1].strip
+
+            # For the case of a quoted charset like charset="utf-8"
+            if value.starts_with?('"') && value.ends_with?('"')
+              value = value[1...-1].strip
+            end
+
             return ComputedContentTypeHeader.new(content_type, value)
           end
         end
@@ -196,27 +231,116 @@ module HTTP
     ComputedContentTypeHeader.new(content_type.strip, nil)
   end
 
+  # Parse a time string using the formats specified by [RFC 2616](https://tools.ietf.org/html/rfc2616#section-3.3.1)
+  #
+  # ```
+  # HTTP.parse_time("Sun, 14 Feb 2016 21:00:00 GMT")  # => "2016-02-14 21:00:00 UTC"
+  # HTTP.parse_time("Sunday, 14-Feb-16 21:00:00 GMT") # => "2016-02-14 21:00:00 UTC"
+  # HTTP.parse_time("Sun Feb 14 21:00:00 2016")       # => "2016-02-14 21:00:00 UTC"
+  # ```
+  #
+  # Uses `Time::Format::HTTP_DATE` as parser.
   def self.parse_time(time_str : String) : Time?
-    DATE_PATTERNS.each do |pattern|
-      begin
-        return Time.parse(time_str, pattern, kind: Time::Kind::Utc)
-      rescue Time::Format::Error
-      end
-    end
-
-    nil
+    Time::Format::HTTP_DATE.parse(time_str)
+  rescue Time::Format::Error
   end
 
-  def self.rfc1123_date(time : Time) : String
-    # TODO: GMT should come from the Time classes instead
-    time.to_utc.to_s("%a, %d %b %Y %H:%M:%S GMT")
+  # Format a `Time` object as a `String` using the format specified as `sane-cookie-date`
+  # by [RFC 6265](https://tools.ietf.org/html/rfc6265#section-4.1.1) which is
+  # according to [RFC 2616](https://tools.ietf.org/html/rfc2616#section-3.3.1) a
+  # [RFC 1123](https://tools.ietf.org/html/rfc1123#page-55) format with explicit
+  # timezone `GMT` (interpreted as `UTC`).
+  #
+  # ```
+  # HTTP.format_time(Time.utc(2016, 2, 15)) # => "Mon, 15 Feb 2016 00:00:00 GMT"
+  # ```
+  #
+  # Uses `Time::Format::HTTP_DATE` as formatter.
+  def self.format_time(time : Time) : String
+    Time::Format::HTTP_DATE.format(time)
+  end
+
+  # Dequotes an [RFC 2616](https://tools.ietf.org/html/rfc2616#page-17)
+  # quoted-string.
+  #
+  # ```
+  # quoted = %q(\"foo\\bar\")
+  # HTTP.dequote_string(quoted) # => %q("foo\bar")
+  # ```
+  def self.dequote_string(str)
+    data = str.to_slice
+    quoted_pair_index = data.index('\\'.ord)
+    return str unless quoted_pair_index
+
+    String.build do |io|
+      while quoted_pair_index
+        io.write(data[0, quoted_pair_index])
+        io << data[quoted_pair_index + 1].chr
+
+        data += quoted_pair_index + 2
+        quoted_pair_index = data.index('\\'.ord)
+      end
+      io.write(data)
+    end
+  end
+
+  # Encodes a string to an [RFC 2616](https://tools.ietf.org/html/rfc2616#page-17)
+  # quoted-string. Encoded string is written to *io*. May raise when *string*
+  # contains an invalid character.
+  #
+  # ```
+  # string = %q("foo\ bar")
+  # io = IO::Memory.new
+  # HTTP.quote_string(string, io)
+  # io.rewind
+  # io.gets_to_end # => %q(\"foo\\\ bar\")
+  # ```
+  def self.quote_string(string, io)
+    # Escaping rules: https://evolvis.org/pipermail/evolvis-platfrm-discuss/2014-November/000675.html
+
+    string.each_byte do |byte|
+      case byte
+      when '\t'.ord, ' '.ord, '"'.ord, '\\'.ord
+        io << '\\'
+      when 0x00..0x1F, 0x7F
+        raise ArgumentError.new("String contained invalid character #{byte.chr.inspect}")
+      end
+      io.write_byte byte
+    end
+  end
+
+  # Encodes a string to an [RFC 2616](https://tools.ietf.org/html/rfc2616#page-17)
+  # quoted-string. May raise when *string* contains an invalid character.
+  #
+  # ```
+  # string = %q("foo\ bar")
+  # HTTP.quote_string(string) # => %q(\"foo\\\ bar\")
+  # ```
+  def self.quote_string(string)
+    String.build do |io|
+      quote_string(string, io)
+    end
   end
 
   # Returns the default status message of the given HTTP status code.
+  #
+  # Based on [Hypertext Transfer Protocol (HTTP) Status Code Registry](https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml)
+  #
+  # Last Updated 2017-04-14
+  #
+  # HTTP Status Codes (source: [http-status-codes-1.csv](https://www.iana.org/assignments/http-status-codes/http-status-codes-1.csv))
+  #
+  # * 1xx: Informational - Request received, continuing process
+  # * 2xx: Success - The action was successfully received, understood, and accepted
+  # * 3xx: Redirection - Further action must be taken in order to complete the request
+  # * 4xx: Client Error - The request contains bad syntax or cannot be fulfilled
+  # * 5xx: Server Error - The server failed to fulfill an apparently valid request
+  #
   def self.default_status_message_for(status_code : Int) : String
     case status_code
     when 100 then "Continue"
     when 101 then "Switching Protocols"
+    when 102 then "Processing"
     when 200 then "OK"
     when 201 then "Created"
     when 202 then "Accepted"
@@ -224,6 +348,8 @@ module HTTP
     when 204 then "No Content"
     when 205 then "Reset Content"
     when 206 then "Partial Content"
+    when 207 then "Multi-Status"
+    when 208 then "Already Reported"
     when 226 then "IM Used"
     when 300 then "Multiple Choices"
     when 301 then "Moved Permanently"
@@ -246,13 +372,15 @@ module HTTP
     when 410 then "Gone"
     when 411 then "Length Required"
     when 412 then "Precondition Failed"
-    when 413 then "Request Entity Too Large"
-    when 414 then "Request-URI Too Long"
+    when 413 then "Payload Too Large"
+    when 414 then "URI Too Long"
     when 415 then "Unsupported Media Type"
-    when 416 then "Requested Range Not Satisfiable"
+    when 416 then "Range Not Satisfiable"
     when 417 then "Expectation Failed"
     when 421 then "Misdirected Request"
+    when 422 then "Unprocessable Entity"
     when 423 then "Locked"
+    when 424 then "Failed Dependency"
     when 426 then "Upgrade Required"
     when 428 then "Precondition Required"
     when 429 then "Too Many Requests"
@@ -265,7 +393,10 @@ module HTTP
     when 504 then "Gateway Timeout"
     when 505 then "HTTP Version Not Supported"
     when 506 then "Variant Also Negotiates"
+    when 507 then "Insufficient Storage"
+    when 508 then "Loop Detected"
     when 510 then "Not Extended"
+    when 511 then "Network Authentication Required"
     else          ""
     end
   end

@@ -1,3 +1,5 @@
+require "random/secure"
+
 # (c) Bob Jenkins, March 1996, Public Domain
 # You may use this code in any way you wish, and it is free.  No warrantee.
 # http://burtleburtle.net/bob/rand/isaacafa.html
@@ -10,7 +12,16 @@ class Random::ISAAC
   private getter bb
   private getter cc
 
-  def initialize(seeds = StaticArray(UInt32, 8).new { Random.new_seed })
+  private alias Seeds = StaticArray(UInt32, 8)
+
+  private def random_seeds
+    result = uninitialized Seeds
+    result_slice = result.unsafe_as(StaticArray(UInt8, sizeof(Seeds))).to_slice
+    Random::Secure.random_bytes(result_slice)
+    result
+  end
+
+  def initialize(seeds = random_seeds)
     @rsl = StaticArray(UInt32, 256).new { 0_u32 }
     @mm = StaticArray(UInt32, 256).new { 0_u32 }
     @counter = 0
@@ -18,12 +29,12 @@ class Random::ISAAC
     init_by_array(seeds)
   end
 
-  def new_seed(seeds = StaticArray(UInt32, 8).new { Random.new_seed })
+  def new_seed(seeds = random_seeds)
     @aa = @bb = @cc = 0_u32
     init_by_array(seeds)
   end
 
-  def next_u32
+  def next_u
     if (@counter -= 1) == -1
       isaac
       @counter = 255
@@ -68,7 +79,7 @@ class Random::ISAAC
     4.times(&mix)
 
     scramble = ->(seed : StaticArray(UInt32, 256)) {
-      0.step(255, 8) do |i|
+      0.step(to: 255, by: 8) do |i|
         a += seed[i]; b += seed[i + 1]; c += seed[i + 2]; d += seed[i + 3]
         e += seed[i + 4]; f += seed[i + 5]; g += seed[i + 6]; h += seed[i + 7]
         mix.call

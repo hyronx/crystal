@@ -61,7 +61,7 @@ describe "Code gen: pointer" do
   end
 
   it "codegens pointer cast" do
-    run("a = 1_i64; (pointerof(a) as Int32*).value").to_i.should eq(1)
+    run("a = 1_i64; pointerof(a).as(Int32*).value").to_i.should eq(1)
   end
 
   it "codegens pointer as if condition" do
@@ -346,14 +346,6 @@ describe "Code gen: pointer" do
       )).to_i.should eq(2)
   end
 
-  it "does pointerof global variable" do
-    run(%(
-      $a = 1
-      pointerof($a).value = 2
-      $a
-      )).to_i.should eq(2)
-  end
-
   it "does pointerof read variable" do
     run(%(
       class Foo
@@ -437,5 +429,74 @@ describe "Code gen: pointer" do
       bar.foo
       1
       ))
+  end
+
+  it "generates correct code for Pointer.malloc(0) (#2905)" do
+    run(%(
+      require "prelude"
+
+      class Foo
+        def initialize(@value : Int32)
+        end
+
+        def value
+          @value
+        end
+      end
+
+      foo = Foo.new(3)
+      Pointer(Int32 | UInt8[9]).malloc(0_u64)
+      foo.value
+      )).to_i.should eq(3)
+  end
+
+  it "compares pointers through typedef" do
+    run(%(
+      module Comparable(T)
+        def ==(other : T)
+          (self <=> other) == 0
+        end
+      end
+
+      struct Pointer(T)
+        include Comparable(Pointer)
+
+        def <=>(other : Pointer)
+          0
+        end
+      end
+
+      lib LibFoo
+        type Ptr = Void*
+      end
+
+      ptr = Pointer(Void).malloc(1_u64).as(LibFoo::Ptr)
+      ptr == ptr
+      )).to_b.should be_true
+  end
+
+  it "takes pointerof lib external var" do
+    test_c(
+      %(
+        int external_var = 0;
+      ),
+      %(
+        lib LibFoo
+          $external_var : Int32
+        end
+
+        LibFoo.external_var = 1
+
+        ptr = pointerof(LibFoo.external_var)
+        x = ptr.value
+
+        ptr.value = 10
+        y = ptr.value
+
+        ptr.value = 100
+        z = LibFoo.external_var
+
+        x + y + z
+      ), &.to_i.should eq(111))
   end
 end

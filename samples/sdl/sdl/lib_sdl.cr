@@ -1,10 +1,11 @@
-ifdef darwin
+{% if flag?(:darwin) %}
   @[Link("SDL")]
   @[Link("SDLMain")]
   @[Link(framework: "Cocoa")]
-else
+{% else %}
   @[Link("SDL")]
-end
+{% end %}
+
 lib LibSDL
   INIT_TIMER       = 0x00000001_u32
   INIT_AUDIO       = 0x00000010_u32
@@ -148,18 +149,4 @@ lib LibSDL
   fun show_cursor = SDL_ShowCursor(toggle : Int32) : Int32
   fun get_ticks = SDL_GetTicks : UInt32
   fun flip = SDL_Flip(screen : Surface*) : Int32
-
-  ifdef linux
-    fun main = SDL_main(argc : Int32, argv : UInt8**) : Int32
-  end
-end
-
-ifdef linux
-  fun main(argc : Int32, argv : UInt8**) : Int32
-    return LibSDL.main(argc, argv)
-  end
-elsif darwin
-  redefine_main(SDL_main) do |main|
-    {{main}}
-  end
 end

@@ -1,14 +1,19 @@
-require "./big"
+require "big"
 
 # Rational numbers are represented as the quotient of arbitrarily large
 # numerators and denominators. Rationals are canonicalized such that the
 # denominator and the numerator have no common factors, and that the
 # denominator is positive. Zero has the unique representation 0/1.
 #
-#     r = BigRational.new(BigInt.new(7),BigInt.new(3))
-#     r.to_s # => "7/3"
-#     r = BigRational.new(3,-9)
-#     r.to_s # => "-1/3"
+# ```
+# require "big"
+#
+# r = BigRational.new(7.to_big_i, 3.to_big_i)
+# r.to_s # => "7/3"
+#
+# r = BigRational.new(3, -9)
+# r.to_s # => "-1/3"
+# ```
 #
 # It is implemented under the hood with [GMP](https://gmplib.org/).
 struct BigRational < Number
@@ -16,9 +21,12 @@ struct BigRational < Number
   include Comparable(Int)
   include Comparable(Float)
 
-  # Create a new BigRational.
+  private MANTISSA_BITS  = 53
+  private MANTISSA_SHIFT = (1_i64 << MANTISSA_BITS).to_f64
+
+  # Create a new `BigRational`.
   #
-  # If `denominator` is 0, this will raise an exception.
+  # If *denominator* is 0, this will raise an exception.
   def initialize(numerator : Int, denominator : Int)
     check_division_by_zero denominator
 
@@ -31,9 +39,24 @@ struct BigRational < Number
     LibGMP.mpq_canonicalize(mpq)
   end
 
-  # Creates a new BigRational with *num* as the numerator and 1 for denominator.
+  # Creates a new `BigRational` with *num* as the numerator and 1 for denominator.
   def initialize(num : Int)
     initialize(num, 1)
+  end
+
+  # Creates a exact representation of float as rational.
+  def initialize(num : Float)
+    # It ensures that `BigRational.new(f) == f`
+    # It relies on fact, that mantissa is at most 53 bits
+    frac, exp = Math.frexp num
+    ifrac = (frac.to_f64 * MANTISSA_SHIFT).to_i64
+    exp -= MANTISSA_BITS
+    initialize ifrac, 1
+    if exp >= 0
+      LibGMP.mpq_mul_2exp(out @mpq, self, exp)
+    else
+      LibGMP.mpq_div_2exp(out @mpq, self, -exp)
+    end
   end
 
   # :nodoc:
@@ -59,8 +82,12 @@ struct BigRational < Number
     LibGMP.mpq_cmp(mpq, other)
   end
 
+  def <=>(other : Float32 | Float64)
+    self <=> BigRational.new(other)
+  end
+
   def <=>(other : Float)
-    self.to_f <=> other
+    to_big_f <=> other.to_big_f
   end
 
   def <=>(other : Int)
@@ -100,16 +127,20 @@ struct BigRational < Number
     self / other.to_big_r
   end
 
-  # Divides the rational by (2**`other`)
+  # Divides the rational by (2 ** *other*)
   #
-  #     BigRational.new(2,3) >> 2 # => 1/6
+  # ```
+  # BigRational.new(2, 3) >> 2 # => 1/6
+  # ```
   def >>(other : Int)
     BigRational.new { |mpq| LibGMP.mpq_div_2exp(mpq, self, other) }
   end
 
-  # Multiplies the rational by (2**`other`)
+  # Multiplies the rational by (2 ** *other*)
   #
-  #     BigRational.new(2,3) << 2 # => 8/3
+  # ```
+  # BigRational.new(2, 3) << 2 # => 8/3
+  # ```
   def <<(other : Int)
     BigRational.new { |mpq| LibGMP.mpq_mul_2exp(mpq, self, other) }
   end
@@ -118,7 +149,7 @@ struct BigRational < Number
     BigRational.new { |mpq| LibGMP.mpq_neg(mpq, self) }
   end
 
-  # Returns a new BigRational as 1/r.
+  # Returns a new `BigRational` as 1/r.
   #
   # This will raise an exception if rational is 0.
   def inv
@@ -130,9 +161,8 @@ struct BigRational < Number
     BigRational.new { |mpq| LibGMP.mpq_abs(mpq, self) }
   end
 
-  def hash
-    to_f64.hash
-  end
+  # TODO: improve this
+  def_hash to_f64
 
   # Returns the `Float64` representing this rational.
   def to_f
@@ -147,14 +177,20 @@ struct BigRational < Number
     LibGMP.mpq_get_d(mpq)
   end
 
+  def to_big_f
+    BigFloat.new { |mpf| LibGMP.mpf_set_q(mpf, mpq) }
+  end
+
   # Returns the string representing this rational.
   #
   # Optionally takes a radix base (2 through 36).
   #
-  #     r = BigRational.new(8243243,562828882)
-  #     r.to_s     # => "8243243/562828882"
-  #     r.to_s(16) # => "7dc82b/218c1652"
-  #     r.to_s(36) # => "4woiz/9b3djm"
+  # ```
+  # r = BigRational.new(8243243, 562828882)
+  # r.to_s     # => "8243243/562828882"
+  # r.to_s(16) # => "7dc82b/218c1652"
+  # r.to_s(36) # => "4woiz/9b3djm"
+  # ```
   def to_s(base = 10)
     String.new(to_cstr(base))
   end
@@ -190,14 +226,18 @@ struct BigRational < Number
   end
 
   private def check_division_by_zero(value)
-    raise DivisionByZero.new if value == 0
+    raise DivisionByZeroError.new if value == 0
   end
 end
 
 struct Int
   include Comparable(BigRational)
 
-  # Returns a BigRational representing this integer.
+  # Returns a `BigRational` representing this integer.
+  # ```
+  # require "big"
+  # 123.to_big_r
+  # ```
   def to_big_r
     BigRational.new(self, 1)
   end
@@ -226,7 +266,45 @@ end
 struct Float
   include Comparable(BigRational)
 
+  # Returns a `BigRational` representing this float.
+  # ```
+  # require "big"
+  # 123.0.to_big_r
+  # ```
+  def to_big_r
+    BigRational.new(self)
+  end
+
   def <=>(other : BigRational)
     -(other <=> self)
+  end
+end
+
+module Math
+  # Returns the sqrt of a `BigRational`.
+  # ```
+  # require "big"
+  # Math.sqrt((1000_000_000_0000.to_big_r*1000_000_000_00000.to_big_r))
+  # ```
+  def sqrt(value : BigRational)
+    sqrt(value.to_big_f)
+  end
+end
+
+# :nodoc:
+struct Crystal::Hasher
+  private HASH_MODULUS_RAT_P = BigRational.new((1_u64 << HASH_BITS) - 1)
+  private HASH_MODULUS_RAT_N = -BigRational.new((1_u64 << HASH_BITS) - 1)
+
+  def float(value : BigRational)
+    rem = value
+    if value >= HASH_MODULUS_RAT_P || value <= HASH_MODULUS_RAT_N
+      num = value.numerator
+      denom = value.denominator
+      div = num.tdiv(denom)
+      floor = div.tdiv(HASH_MODULUS)
+      rem -= floor * HASH_MODULUS
+    end
+    rem.to_big_f.hash
   end
 end

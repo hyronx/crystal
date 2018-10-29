@@ -4,15 +4,8 @@ describe Thread do
   it "allows passing an argumentless fun to execute" do
     a = 0
     thread = Thread.new { a = 1; 10 }
-    thread.join.should eq(10)
+    thread.join
     a.should eq(1)
-  end
-
-  it "allows passing a fun with an argument to execute" do
-    a = 0
-    thread = Thread.new(3) { |i| a += i; 20 }
-    thread.join.should eq(20)
-    a.should eq(3)
   end
 
   it "raises inside thread and gets it on join" do
@@ -22,9 +15,26 @@ describe Thread do
     end
   end
 
-  it "gets a non-nilable value from join" do
-    thread = Thread.new { 1 }
-    value = thread.join
-    (value + 2).should eq(3)
+  it "returns current thread object" do
+    current = nil
+    thread = Thread.new { current = Thread.current }
+    thread.join
+    current.should be(thread)
+    current.should_not be(Thread.current)
+  end
+
+  it "yields the processor" do
+    done = false
+
+    thread = Thread.new do
+      3.times { Thread.yield }
+      done = true
+    end
+
+    until done
+      Thread.yield
+    end
+
+    thread.join
   end
 end

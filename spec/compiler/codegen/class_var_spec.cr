@@ -179,24 +179,6 @@ describe "Codegen: class var" do
       )).to_i.should eq(3)
   end
 
-  it "initializes class var conditionally" do
-    run(%(
-      class Foo
-        if 1 == 2
-          @@x = 3
-        else
-          @@x = 4
-        end
-
-        def self.x
-          @@x
-        end
-      end
-
-      Foo.x
-      )).to_i.should eq(4)
-  end
-
   it "codegens second class var initializer" do
     run(%(
       class Foo
@@ -220,11 +202,11 @@ describe "Codegen: class var" do
         a + b
       end
 
-      A = foo()
+      CONST = foo()
 
       class Foo
         @@foo : Int32
-        @@foo = A
+        @@foo = CONST
 
         def self.foo
           @@foo
@@ -496,5 +478,77 @@ describe "Codegen: class var" do
 
       Bar.var
       )).to_i.should eq(2)
+  end
+
+  it "declares var as uninitialized and initializes it unsafely" do
+    run(%(
+      class Foo
+        @@x = uninitialized Int32
+        @@x = Foo.bar
+
+        def self.bar
+          if 1 == 2
+            @@x
+          else
+            10
+          end
+        end
+
+        def self.x
+          @@x
+        end
+      end
+
+      Foo.x
+      )).to_i.should eq(10)
+  end
+
+  it "doesn't crash with pointerof from another module" do
+    run(%(
+      require "prelude"
+
+      class Foo
+        @@x : Int32?
+        @@x = 1
+
+        def self.x
+          pointerof(@@x).value
+        end
+      end
+
+      class Bar
+        def self.bar
+          Foo.x
+        end
+      end
+
+      Bar.bar
+      )).to_i.should eq(1)
+  end
+
+  it "codegens generic class class var" do
+    run(%(
+      class Foo(T)
+        @@bar = 1
+
+        def bar
+          @@bar
+        end
+
+        def bar=(@@bar)
+        end
+      end
+
+      f1 = Foo(Int32).new
+      f2 = Foo(String).new
+
+      a = f1.bar
+      b = f2.bar
+      f1.bar = 10
+      c = f2.bar
+      f2.bar = 20
+      d = f1.bar
+      a + b + c + d
+      )).to_i.should eq(1 + 1 + 10 + 20)
   end
 end

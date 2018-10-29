@@ -42,17 +42,24 @@ module Spec
       @results[result.kind] << result
     end
 
-    def self.print_results(elapsed_time)
-      @@instance.print_results(elapsed_time)
+    def self.print_results(elapsed_time, aborted = false)
+      @@instance.print_results(elapsed_time, aborted)
     end
 
     def self.succeeded
       @@instance.succeeded
     end
 
-    def print_results(elapsed_time)
-      Spec.formatters.each(&.finish)
+    def self.finish(elapsed_time, aborted = false)
+      @@instance.finish(elapsed_time, aborted)
+    end
 
+    def finish(elapsed_time, aborted = false)
+      Spec.formatters.each(&.finish)
+      Spec.formatters.each(&.print_results(elapsed_time, aborted))
+    end
+
+    def print_results(elapsed_time, aborted = false)
       pendings = @results[:pending]
       unless pendings.empty?
         puts
@@ -72,7 +79,8 @@ module Spec
         failures_and_errors.each_with_index do |fail, i|
           if ex = fail.exception
             puts
-            puts "  #{i + 1}) #{fail.description}"
+            puts "#{(i + 1).to_s.rjust(3, ' ')}) #{fail.description}"
+
             if ex.is_a?(AssertionFailed)
               source_line = Spec.read_line(ex.file, ex.line)
               if source_line
@@ -81,20 +89,15 @@ module Spec
             end
             puts
 
-            ex.to_s.split("\n").each do |line|
+            message = ex.is_a?(AssertionFailed) ? ex.to_s : ex.inspect_with_backtrace
+            message.split('\n').each do |line|
               print "       "
               puts Spec.color(line, :error)
-            end
-            unless ex.is_a?(AssertionFailed)
-              ex.backtrace.each do |trace|
-                print "       "
-                puts Spec.color(trace, :error)
-              end
             end
 
             if ex.is_a?(AssertionFailed)
               puts
-              puts "     # #{Spec.relative_file(ex.file)}:#{ex.line}".colorize.cyan
+              puts Spec.color("     # #{Spec.relative_file(ex.file)}:#{ex.line}", :comment)
             end
           end
         end
@@ -123,11 +126,13 @@ module Spec
       total = pendings.size + failures.size + errors.size + success.size
 
       final_status = case
+                     when aborted                           then :error
                      when (failures.size + errors.size) > 0 then :fail
                      when pendings.size > 0                 then :pending
                      else                                        :success
                      end
 
+      puts "Aborted!".colorize.red if aborted
       puts "Finished in #{Spec.to_human(elapsed_time)}"
       puts Spec.color("#{total} examples, #{failures.size} failures, #{errors.size} errors, #{pendings.size} pending", final_status)
 
@@ -136,8 +141,8 @@ module Spec
         puts "Failed examples:"
         puts
         failures_and_errors.each do |fail|
-          print "crystal spec #{Spec.relative_file(fail.file)}:#{fail.line}".colorize.red
-          puts " # #{fail.description}".colorize.cyan
+          print Spec.color("crystal spec #{Spec.relative_file(fail.file)}:#{fail.line}", :error)
+          puts Spec.color(" # #{fail.description}", :comment)
         end
       end
     end

@@ -8,7 +8,7 @@ describe "Regex" do
 
   it "does =~" do
     (/foo/ =~ "bar foo baz").should eq(4)
-    $~.size.should eq(0)
+    $~.group_size.should eq(0)
   end
 
   it "does inspect" do
@@ -25,15 +25,35 @@ describe "Regex" do
     "Crystal".match(/(?<bar>C)#{/(?<foo>R)/i}/).should be_truthy
     "Crystal".match(/(?<bar>C)#{/(?<foo>R)/}/i).should be_falsey
 
-    "Crystal".match(/(?<bar>.)#{/(?<foo>.)/}/) do |md|
-      md[0].should eq("Cr")
-      md["bar"].should eq("C")
-      md["foo"].should eq("r")
-    end
+    md = "Crystal".match(/(?<bar>.)#{/(?<foo>.)/}/).not_nil!
+    md[0].should eq("Cr")
+    md["bar"].should eq("C")
+    md["foo"].should eq("r")
+  end
+
+  it "does inspect with slash" do
+    %r(/).inspect.should eq("/\\//")
+    %r(\/).inspect.should eq("/\\//")
+  end
+
+  it "does to_s with slash" do
+    %r(/).to_s.should eq("(?-imsx:\\/)")
+    %r(\/).to_s.should eq("(?-imsx:\\/)")
   end
 
   it "doesn't crash when PCRE tries to free some memory (#771)" do
     expect_raises(ArgumentError) { Regex.new("foo)") }
+  end
+
+  it "checks if Char need to be escaped" do
+    Regex.needs_escape?('*').should be_true
+    Regex.needs_escape?('|').should be_true
+    Regex.needs_escape?('@').should be_false
+  end
+
+  it "checks if String need to be escaped" do
+    Regex.needs_escape?("10$").should be_true
+    Regex.needs_escape?("foo").should be_false
   end
 
   it "escapes" do
@@ -57,7 +77,7 @@ describe "Regex" do
 
   it "matches with =~ and captures" do
     ("fooba" =~ /f(o+)(bar?)/).should eq(0)
-    $~.size.should eq(2)
+    $~.group_size.should eq(2)
     $1.should eq("oo")
     $2.should eq("ba")
   end
@@ -70,7 +90,7 @@ describe "Regex" do
   it "matches with === and captures" do
     "foo" =~ /foo/
     (/f(o+)(bar?)/ === "fooba").should be_true
-    $~.size.should eq(2)
+    $~.group_size.should eq(2)
     $1.should eq("oo")
     $2.should eq("ba")
   end

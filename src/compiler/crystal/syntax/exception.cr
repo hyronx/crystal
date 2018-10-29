@@ -15,15 +15,13 @@ module Crystal
       @filename || @line_number
     end
 
-    def json_obj(ar, io)
-      ar.push do
-        io.json_object do |obj|
-          obj.field "file", true_filename
-          obj.field "line", @line_number
-          obj.field "column", @column_number
-          obj.field "size", @size
-          obj.field "message", @message
-        end
+    def to_json_single(json)
+      json.object do
+        json.field "file", true_filename
+        json.field "line", @line_number
+        json.field "column", @column_number
+        json.field "size", @size
+        json.field "message", @message
       end
     end
 
@@ -43,17 +41,17 @@ module Crystal
           if line
             io << "\n\n"
             io << replace_leading_tabs_with_spaces(line.chomp)
-            io << "\n"
+            io << '\n'
             (@column_number - 1).times do
-              io << " "
+              io << ' '
             end
             with_color.green.bold.surround(io) do
-              io << "^"
+              io << '^'
               if size = @size
                 io << ("~" * (size - 1))
               end
             end
-            io << "\n"
+            io << '\n'
           end
         end
       end

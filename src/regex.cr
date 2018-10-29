@@ -1,10 +1,10 @@
 require "./regex/*"
 
-# A Regex represents a regular expression, a pattern that describes the
-# contents of strings. A Regex can determine whether or not a string matches
+# A `Regex` represents a regular expression, a pattern that describes the
+# contents of strings. A `Regex` can determine whether or not a string matches
 # its description, and extract the parts of the string that match.
 #
-# A Regex can be created using the literal syntax, in which it is delimited by
+# A `Regex` can be created using the literal syntax, in which it is delimited by
 # forward slashes (`/`):
 #
 # ```
@@ -21,7 +21,7 @@ require "./regex/*"
 # x = "a"
 # /#{x}/.match("asdf") # => #<Regex::MatchData "a">
 # x = "("
-# /#{x}/ # => ArgumentError
+# /#{x}/ # raises ArgumentError
 # ```
 #
 # When we check to see if a particular regular expression describes a string,
@@ -57,7 +57,7 @@ require "./regex/*"
 # $~                     # => #<Regex::MatchData "stack">
 # /needle/ =~ "haystack" # => nil
 # "haystack" =~ /needle/ # => nil
-# $~                     # => nil
+# $~                     # raises Exception
 # ```
 #
 # When matching a regular expression using `#match` (either `String#match` or
@@ -70,7 +70,7 @@ require "./regex/*"
 # $~                         # => #<Regex::MatchData "hay">
 # /needle/.match("haystack") # => nil
 # "haystack".match(/needle/) # => nil
-# $~                         # => nil
+# $~                         # raises Exception
 # ```
 #
 # [Regular expressions](https://en.wikipedia.org/wiki/Regular_expression)
@@ -101,16 +101,30 @@ require "./regex/*"
 # each capture group can be extracted on a successful match:
 #
 # ```
-# /a(sd)f/.match("_asdf_")                          # => #<Regex::MatchData "asdf" 1:"sd">
-# /a(sd)f/.match("_asdf_") { |md| md[1] }           # => "sd"
-# /a(?<grp>sd)f/.match("_asdf_")                    # => #<Regex::MatchData "asdf" grp:"sd">
-# /a(?<grp>sd)f/.match("_asdf_") { |md| md["grp"] } # => "sd"
+# /a(sd)f/.match("_asdf_")                     # => #<Regex::MatchData "asdf" 1:"sd">
+# /a(sd)f/.match("_asdf_").try &.[1]           # => "sd"
+# /a(?<grp>sd)f/.match("_asdf_")               # => #<Regex::MatchData "asdf" grp:"sd">
+# /a(?<grp>sd)f/.match("_asdf_").try &.["grp"] # => "sd"
 # ```
 #
 # Capture groups are indexed starting from 1. Methods that accept a capture
 # group index will usually also accept 0 to refer to the full match. Capture
 # groups can also be given names, using the `(?&lt;name&gt;...)` syntax, as in the
 # previous example.
+#
+# Following a match, the special variables $N (e.g., $1, $2, $3, ...) can be used
+# to access a capture group. Trying to access an invalid capture group will raise an
+# exception. Note that it is possible to have a successful match with a nil capture:
+#
+# ```
+# /(spice)(s)?/.match("spice") # => #<Regex::MatchData "spice" 1:"spice" 2:nil>
+# $1                           # => "spice"
+# $2                           # => raises Exception
+# ```
+#
+# This can be mitigated by using the nilable version of the above: $N?,
+# (e.g., $1? $2?, $3?, ...). Changing the above to use `$2?` instead of `$2`
+# would return `nil`. `$2?.nil?` would return `true`.
 #
 # A character or group can be
 # [repeated](http://www.pcre.org/original/doc/html/pcrepattern.html#SEC17)
@@ -164,29 +178,39 @@ require "./regex/*"
 # * `x`: extended (PCRE_EXTENDED)
 #
 # ```
-# /asdf/ =~ "ASDF"         # => nil
-# /asdf/i =~ "ASDF"        # => 0
-# /asdf\nz/i =~ "ASDF\nZ"  # => nil
-# /asdf\nz/im =~ "ASDF\nZ" # => 0
+# /asdf/ =~ "ASDF"    # => nil
+# /asdf/i =~ "ASDF"   # => 0
+# /^z/i =~ "ASDF\nZ"  # => nil
+# /^z/im =~ "ASDF\nZ" # => 5
 # ```
 #
 # PCRE supports other encodings, but Crystal strings are UTF-8 only, so Crystal
 # regular expressions are also UTF-8 only (by default).
 #
 # PCRE optionally permits named capture groups (named subpatterns) to not be
-# unique. Crystal exposes the name table of a Regex as a
-# Hash of String => Int32, and therefore requires named capture groups to have
-# unique names within a single Regex.
+# unique. Crystal exposes the name table of a `Regex` as a
+# `Hash` of `String` => `Int32`, and therefore requires named capture groups to have
+# unique names within a single `Regex`.
 class Regex
+  # List of metacharacters that need to be escaped.
+  #
+  # See `Regex.needs_escape?` and `Regex.escape`.
+  SPECIAL_CHARACTERS = {
+    ' ', '.', '\\', '+', '*', '?', '[',
+    '^', ']', '$', '(', ')', '{', '}',
+    '=', '!', '<', '>', '|', ':', '-',
+  }
+
   @[Flags]
   enum Options
     IGNORE_CASE = 1
-    # PCRE native PCRE_MULTILINE flag is 2, and PCRE_DOTALL is 4 ;
-    # - PCRE_DOTALL changes the "." meaning,
-    # - PCRE_MULTILINE changes "^" and "$" meanings)
-    # Ruby modifies this meaning to have essentially one unique "m"
+    # PCRE native `PCRE_MULTILINE` flag is `2`, and `PCRE_DOTALL` is `4`
+    # - `PCRE_DOTALL` changes the "`.`" meaning
+    # - `PCRE_MULTILINE` changes "`^`" and "`$`" meanings
+    #
+    # Crystal modifies this meaning to have essentially one unique "`m`"
     # flag that activates both behaviours, so here we do the same by
-    # mapping MULTILINE to PCRE_MULTILINE | PCRE_DOTALL
+    # mapping `MULTILINE` to `PCRE_MULTILINE | PCRE_DOTALL`.
     MULTILINE = 6
     EXTENDED  = 8
     # :nodoc:
@@ -195,36 +219,39 @@ class Regex
     UTF_8 = 0x00000800
     # :nodoc:
     NO_UTF8_CHECK = 0x00002000
+    # :nodoc:
+    DUPNAMES = 0x00080000
   end
 
-  # Return a `Regex::Options` representing the optional flags applied to this Regex.
+  # Returns a `Regex::Options` representing the optional flags applied to this `Regex`.
   #
   # ```
-  # /ab+c/ix.options # => IGNORE_CASE, EXTENDED
+  # /ab+c/ix.options      # => Regex::Options::IGNORE_CASE | Regex::Options::EXTENDED
+  # /ab+c/ix.options.to_s # => "IGNORE_CASE | EXTENDED"
   # ```
   getter options : Options
 
-  # Return the original String representation of the Regex pattern.
+  # Returns the original `String` representation of the `Regex` pattern.
   #
   # ```
   # /ab+c/x.source # => "ab+c"
   # ```
   getter source : String
 
-  # Creates a new Regex out of the given source String.
+  # Creates a new `Regex` out of the given source `String`.
   #
   # ```
-  # Regex.new("^a-z+:\s+\w+")                     # => /^a-z+:\s+\w+/
+  # Regex.new("^a-z+:\\s+\\w+")                   # => /^a-z+:\s+\w+/
   # Regex.new("cat", Regex::Options::IGNORE_CASE) # => /cat/i
   # options = Regex::Options::IGNORE_CASE | Regex::Options::EXTENDED
   # Regex.new("dog", options) # => /dog/ix
   # ```
-  def initialize(source, @options : Options = Options::None)
+  def initialize(source : String, @options : Options = Options::None)
     # PCRE's pattern must have their null characters escaped
     source = source.gsub('\u{0}', "\\0")
     @source = source
 
-    @re = LibPCRE.compile(@source, (options | Options::UTF_8 | Options::NO_UTF8_CHECK), out errptr, out erroffset, nil)
+    @re = LibPCRE.compile(@source, (options | Options::UTF_8 | Options::NO_UTF8_CHECK | Options::DUPNAMES), out errptr, out erroffset, nil)
     raise ArgumentError.new("#{String.new(errptr)} at #{erroffset}") if @re.null?
     @extra = LibPCRE.study(@re, 0, out studyerrptr)
     raise ArgumentError.new("#{String.new(studyerrptr)}") if @extra.null? && studyerrptr
@@ -232,14 +259,14 @@ class Regex
   end
 
   # Determines Regex's source validity. If it is, `nil` is returned.
-  # If it's not, a String containing the error message is returned.
+  # If it's not, a `String` containing the error message is returned.
   #
   # ```
   # Regex.error?("(foo|bar)") # => nil
   # Regex.error?("(foo|bar")  # => "missing ) at 8"
   # ```
   def self.error?(source)
-    re = LibPCRE.compile(source, (Options::UTF_8 | Options::NO_UTF8_CHECK), out errptr, out erroffset, nil)
+    re = LibPCRE.compile(source, (Options::UTF_8 | Options::NO_UTF8_CHECK | Options::DUPNAMES), out errptr, out erroffset, nil)
     if re
       nil
     else
@@ -247,7 +274,28 @@ class Regex
     end
   end
 
-  # Returns a String constructed by escaping any metacharacters in `str`.
+  # Returns `true` if *char* need to be escaped, `false` otherwise.
+  #
+  # ```
+  # Regex.needs_escape?('*') # => true
+  # Regex.needs_escape?('@') # => false
+  # ```
+  def self.needs_escape?(char : Char) : Bool
+    SPECIAL_CHARACTERS.includes?(char)
+  end
+
+  # Returns `true` if *str* need to be escaped, `false` otherwise.
+  #
+  # ```
+  # Regex.needs_escape?("10$") # => true
+  # Regex.needs_escape?("foo") # => false
+  # ```
+  def self.needs_escape?(str : String) : Bool
+    str.each_char { |char| return true if SPECIAL_CHARACTERS.includes?(char) }
+    false
+  end
+
+  # Returns a `String` constructed by escaping any metacharacters in *str*.
   #
   # ```
   # string = Regex.escape("\*?{}.") # => "\\*\\?\\{\\}\\."
@@ -256,22 +304,21 @@ class Regex
   def self.escape(str) : String
     String.build do |result|
       str.each_byte do |byte|
-        case byte.unsafe_chr
-        when ' ', '.', '\\', '+', '*', '?', '[',
-             '^', ']', '$', '(', ')', '{', '}',
-             '=', '!', '<', '>', '|', ':', '-'
-          result << '\\'
-          result.write_byte byte
-        else
-          result.write_byte byte
-        end
+        {% begin %}
+          case byte.unsafe_chr
+          when {{*SPECIAL_CHARACTERS}}
+            result << '\\'
+            result.write_byte byte
+          else
+            result.write_byte byte
+          end
+        {% end %}
       end
     end
   end
 
-  # Union. Returns a Regex that matches any of `patterns`. If any pattern
-  # contains a named capture group using the same name as a named capture
-  # group in any other pattern, an ArgumentError will be raised at runtime.
+  # Union. Returns a `Regex` that matches any of *patterns*.
+  #
   # All capture groups in the patterns after the first one will have their
   # indexes offset.
   #
@@ -284,12 +331,11 @@ class Regex
   # re.match("sledding") # => #<Regex::MatchData "sledding">
   # ```
   def self.union(patterns : Enumerable(Regex | String)) : self
-    new patterns.map { |pattern| union_part pattern }.join("|")
+    new patterns.map { |pattern| union_part pattern }.join('|')
   end
 
-  # Union. Returns a Regex that matches any of `patterns`. If any pattern
-  # contains a named capture group using the same name as a named capture
-  # group in any other pattern, an ArgumentError will be raised at runtime.
+  # Union. Returns a `Regex` that matches any of *patterns*.
+  #
   # All capture groups in the patterns after the first one will have their
   # indexes offset.
   #
@@ -310,10 +356,9 @@ class Regex
     escape pattern
   end
 
-  # Union. Returns a Regex that matches either of the operands. If either
-  # operand contains a named capture groups using the same name as a named
-  # capture group in the other operand, an ArgumentError will be raised at
-  # runtime. All capture groups in the second operand will have their indexes
+  # Union. Returns a `Regex` that matches either of the operands.
+  #
+  # All capture groups in the second operand will have their indexes
   # offset.
   #
   # ```
@@ -358,9 +403,9 @@ class Regex
     !match.nil?
   end
 
-  # Match. Matches a regular expression against `other` and returns
-  # the starting position of the match if `other` is a matching String,
-  # otherwise `nil`. `$~` will contain a Regex::MatchData if there was a match,
+  # Match. Matches a regular expression against *other* and returns
+  # the starting position of the match if *other* is a matching `String`,
+  # otherwise `nil`. `$~` will contain a `Regex::MatchData` if there was a match,
   # `nil` otherwise.
   #
   # ```
@@ -373,7 +418,7 @@ class Regex
     match.try &.begin(0)
   end
 
-  # Match. When the argument is not a String, always returns `nil`.
+  # Match. When the argument is not a `String`, always returns `nil`.
   #
   # ```
   # /at/ =~ "input data" # => 7
@@ -383,7 +428,7 @@ class Regex
     nil
   end
 
-  # Convert to String in literal format. Returns the source as a String in
+  # Convert to `String` in literal format. Returns the source as a `String` in
   # Regex literal format, delimited in forward slashes (`/`), with any
   # optional flags included.
   #
@@ -391,25 +436,25 @@ class Regex
   # /ab+c/ix.inspect # => "/ab+c/ix"
   # ```
   def inspect(io : IO)
-    io << "/"
-    io << source
-    io << "/"
-    io << "i" if options.includes?(Options::IGNORE_CASE)
-    io << "m" if options.includes?(Options::MULTILINE)
-    io << "x" if options.includes?(Options::EXTENDED)
+    io << '/'
+    Regex.append_source(source, io)
+    io << '/'
+    io << 'i' if options.ignore_case?
+    io << 'm' if options.multiline?
+    io << 'x' if options.extended?
   end
 
-  # Match at character index. Matches a regular expression against String
-  # `str`. Starts at the character index given by `pos` if given, otherwise at
-  # the start of `str`. Returns a `Regex::MatchData` if `str` matched, otherwise
+  # Match at character index. Matches a regular expression against `String`
+  # *str*. Starts at the character index given by *pos* if given, otherwise at
+  # the start of *str*. Returns a `Regex::MatchData` if *str* matched, otherwise
   # `nil`. `$~` will contain the same value that was returned.
   #
   # ```
-  # /(.)(.)(.)/.match("abc").not_nil![2]   # => "b"
-  # /(.)(.)/.match("abc", 1).not_nil![2]   # => "c"
-  # /(.)(.)/.match("クリスタル", 3).not_nil![2] # => "ル"
+  # /(.)(.)(.)/.match("abc").try &.[2]   # => "b"
+  # /(.)(.)/.match("abc", 1).try &.[2]   # => "c"
+  # /(.)(.)/.match("クリスタル", 3).try &.[2] # => "ル"
   # ```
-  def match(str, pos = 0, options = Regex::Options::None)
+  def match(str, pos = 0, options = Regex::Options::None) : MatchData?
     if byte_index = str.char_index_to_byte_index(pos)
       match = match_at_byte_index(str, byte_index, options)
     else
@@ -419,17 +464,17 @@ class Regex
     $~ = match
   end
 
-  # Match at byte index. Matches a regular expression against String
-  # `str`. Starts at the byte index given by `pos` if given, otherwise at
-  # the start of `str`. Returns a Regex::MatchData if `str` matched, otherwise
+  # Match at byte index. Matches a regular expression against `String`
+  # *str*. Starts at the byte index given by *pos* if given, otherwise at
+  # the start of *str*. Returns a `Regex::MatchData` if *str* matched, otherwise
   # `nil`. `$~` will contain the same value that was returned.
   #
   # ```
-  # /(.)(.)(.)/.match_at_byte_index("abc").not_nil![2]   # => "b"
-  # /(.)(.)/.match_at_byte_index("abc", 1).not_nil![2]   # => "c"
-  # /(.)(.)/.match_at_byte_index("クリスタル", 3).not_nil![2] # => "ス"
+  # /(.)(.)(.)/.match_at_byte_index("abc").try &.[2]   # => "b"
+  # /(.)(.)/.match_at_byte_index("abc", 1).try &.[2]   # => "c"
+  # /(.)(.)/.match_at_byte_index("クリスタル", 3).try &.[2] # => "ス"
   # ```
-  def match_at_byte_index(str, byte_index = 0, options = Regex::Options::None)
+  def match_at_byte_index(str, byte_index = 0, options = Regex::Options::None) : MatchData?
     return ($~ = nil) if byte_index > str.bytesize
 
     ovector_size = (@captures + 1) * 3
@@ -444,9 +489,9 @@ class Regex
     $~ = match
   end
 
-  # Returns a Hash where the values are the names of capture groups and the
+  # Returns a `Hash` where the values are the names of capture groups and the
   # keys are their indexes. Non-named capture groups will not have entries in
-  # the Hash. Capture groups are indexed starting from 1.
+  # the `Hash`. Capture groups are indexed starting from `1`.
   #
   # ```
   # /(.)/.name_table                         # => {}
@@ -454,7 +499,7 @@ class Regex
   # /(?<foo>.)(?<bar>.)/.name_table          # => {2 => "bar", 1 => "foo"}
   # /(.)(?<foo>.)(.)(?<bar>.)(.)/.name_table # => {4 => "bar", 2 => "foo"}
   # ```
-  def name_table
+  def name_table : Hash(UInt16, String)
     LibPCRE.full_info(@re, @extra, LibPCRE::INFO_NAMECOUNT, out name_count)
     LibPCRE.full_info(@re, @extra, LibPCRE::INFO_NAMEENTRYSIZE, out name_entry_size)
     table_pointer = Pointer(UInt8).null
@@ -476,8 +521,8 @@ class Regex
     lookup
   end
 
-  # Convert to String in subpattern format. Produces a String which can be
-  # embedded in another Regex via interpolation, where it will be interpreted
+  # Convert to `String` in subpattern format. Produces a `String` which can be
+  # embedded in another `Regex` via interpolation, where it will be interpreted
   # as a non-capturing subexpression in another regular expression.
   #
   # ```
@@ -489,18 +534,35 @@ class Regex
   # ```
   def to_s(io : IO)
     io << "(?"
-    io << "i" if options.includes?(Options::IGNORE_CASE)
-    io << "ms" if options.includes?(Options::MULTILINE)
-    io << "x" if options.includes?(Options::EXTENDED)
+    io << 'i' if options.ignore_case?
+    io << "ms" if options.multiline?
+    io << 'x' if options.extended?
 
-    io << "-"
-    io << "i" unless options.includes?(Options::IGNORE_CASE)
-    io << "ms" unless options.includes?(Options::MULTILINE)
-    io << "x" unless options.includes?(Options::EXTENDED)
+    io << '-'
+    io << 'i' unless options.ignore_case?
+    io << "ms" unless options.multiline?
+    io << 'x' unless options.extended?
 
-    io << ":"
-    io << source
-    io << ")"
+    io << ':'
+    Regex.append_source(source, io)
+    io << ')'
+  end
+
+  # :nodoc:
+  def self.append_source(source, io) : Nil
+    reader = Char::Reader.new(source)
+    while reader.has_next?
+      case char = reader.current_char
+      when '\\'
+        io << '\\'
+        io << reader.next_char
+      when '/'
+        io << "\\/"
+      else
+        io << char
+      end
+      reader.next_char
+    end
   end
 
   def dup

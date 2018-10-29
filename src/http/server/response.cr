@@ -12,9 +12,7 @@ class HTTP::Server
   # are written and the connection `IO` (a socket) is yielded to the given block.
   # The block must invoke `close` afterwards, the server won't do it in this case.
   # This is useful to implement protocol upgrades, such as websockets.
-  class Response
-    include IO
-
+  class Response < IO
     # The response headers (`HTTP::Headers`). These must be set before writing to the response.
     getter headers : HTTP::Headers
 
@@ -44,6 +42,7 @@ class HTTP::Server
 
     # :nodoc:
     def reset
+      # This method is called by RequestProcessor to avoid allocating a new instance for each iteration.
       @headers.clear
       @cookies = nil
       @status_code = 200
@@ -64,7 +63,9 @@ class HTTP::Server
     end
 
     # See `IO#write(slice)`.
-    def write(slice : Slice(UInt8))
+    def write(slice : Bytes)
+      return if slice.empty?
+
       @output.write(slice)
     end
 
@@ -74,8 +75,8 @@ class HTTP::Server
     end
 
     # :nodoc:
-    def read(slice : Slice(UInt8))
-      raise "can't read from HTTP::Server::Response"
+    def read(slice : Bytes)
+      raise "Can't read from HTTP::Server::Response"
     end
 
     # Upgrades this response, writing headers and yieling the connection `IO` (a socket) to the given block.
@@ -104,6 +105,11 @@ class HTTP::Server
       @output.close
     end
 
+    # Returns `true` if this response has been closed.
+    def closed?
+      @output.closed?
+    end
+
     # Generates an error response using *message* and *code*.
     #
     # Calls `reset` and then writes the given message.
@@ -117,7 +123,7 @@ class HTTP::Server
 
     protected def write_headers
       status_message = HTTP.default_status_message_for(@status_code)
-      @io << @version << " " << @status_code << " " << status_message << "\r\n"
+      @io << @version << ' ' << @status_code << ' ' << status_message << "\r\n"
       headers.each do |name, values|
         values.each do |value|
           @io << name << ": " << value << "\r\n"
@@ -136,7 +142,7 @@ class HTTP::Server
     end
 
     # :nodoc:
-    class Output
+    class Output < IO
       include IO::Buffered
 
       property! response : Response
@@ -149,18 +155,21 @@ class HTTP::Server
       end
 
       def reset
-        @in_buffer_rem = Slice.new(Pointer(UInt8).null, 0)
+        @in_buffer_rem = Bytes.empty
         @out_count = 0
         @sync = false
         @flush_on_newline = false
         @chunked = false
+        @closed = false
       end
 
-      private def unbuffered_read(slice : Slice(UInt8))
-        raise "can't read from HTTP::Server::Response"
+      private def unbuffered_read(slice : Bytes)
+        raise "Can't read from HTTP::Server::Response"
       end
 
-      private def unbuffered_write(slice : Slice(UInt8))
+      private def unbuffered_write(slice : Bytes)
+        return if slice.empty?
+
         unless response.wrote_headers?
           if response.version != "HTTP/1.0" && !response.headers.has_key?("Content-Length")
             response.headers["Transfer-Encoding"] = "chunked"
@@ -178,6 +187,10 @@ class HTTP::Server
         else
           @io.write(slice)
         end
+      end
+
+      def closed?
+        @closed
       end
 
       def close
@@ -202,10 +215,11 @@ class HTTP::Server
 
       private def unbuffered_close
         @io << "0\r\n\r\n" if @chunked
+        @closed = true
       end
 
       private def unbuffered_rewind
-        raise "can't rewind to HTTP::Server::Response"
+        raise "Can't rewind to HTTP::Server::Response"
       end
 
       private def unbuffered_flush

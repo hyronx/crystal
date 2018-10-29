@@ -1,5 +1,5 @@
 require "spec"
-require "big_int"
+require "big"
 
 describe "BigInt" do
   it "creates with a value of zero" do
@@ -22,10 +22,12 @@ describe "BigInt" do
 
   it "creates from string" do
     BigInt.new("12345678").to_s.should eq("12345678")
+    BigInt.new("+12345678").to_s.should eq("12345678")
+    BigInt.new("-12345678").to_s.should eq("-12345678")
   end
 
   it "raises if creates from string but invalid" do
-    expect_raises ArgumentError, "invalid BigInt: 123 hello 456" do
+    expect_raises ArgumentError, "Invalid BigInt: 123 hello 456" do
       BigInt.new("123 hello 456")
     end
   end
@@ -53,11 +55,36 @@ describe "BigInt" do
     [1.1, 1.to_big_i, 3.to_big_i, 2.2].sort.should eq([1, 1.1, 2.2, 3])
   end
 
+  it "divides and calculs the modulo" do
+    11.to_big_i.divmod(3.to_big_i).should eq({3, 2})
+    11.to_big_i.divmod(-3.to_big_i).should eq({-4, -1})
+
+    11.to_big_i.divmod(3_i32).should eq({3, 2})
+    11.to_big_i.divmod(-3_i32).should eq({-4, -1})
+
+    10.to_big_i.divmod(2).should eq({5, 0})
+    11.to_big_i.divmod(2).should eq({5, 1})
+
+    10.to_big_i.divmod(2.to_big_i).should eq({5, 0})
+    11.to_big_i.divmod(2.to_big_i).should eq({5, 1})
+
+    10.to_big_i.divmod(-2).should eq({-5, 0})
+    11.to_big_i.divmod(-2).should eq({-6, -1})
+
+    -10.to_big_i.divmod(2).should eq({-5, 0})
+    -11.to_big_i.divmod(2).should eq({-6, 1})
+
+    -10.to_big_i.divmod(-2).should eq({5, 0})
+    -11.to_big_i.divmod(-2).should eq({5, -1})
+  end
+
   it "adds" do
     (1.to_big_i + 2.to_big_i).should eq(3.to_big_i)
     (1.to_big_i + 2).should eq(3.to_big_i)
     (1.to_big_i + 2_u8).should eq(3.to_big_i)
     (5.to_big_i + (-2_i64)).should eq(3.to_big_i)
+    (5.to_big_i + Int64::MAX).should be > Int64::MAX.to_big_i
+    (5.to_big_i + Int64::MAX).should eq(Int64::MAX.to_big_i + 5)
 
     (2 + 1.to_big_i).should eq(3.to_big_i)
   end
@@ -67,6 +94,8 @@ describe "BigInt" do
     (5.to_big_i - 2).should eq(3.to_big_i)
     (5.to_big_i - 2_u8).should eq(3.to_big_i)
     (5.to_big_i - (-2_i64)).should eq(7.to_big_i)
+    (-5.to_big_i - Int64::MAX).should be < -Int64::MAX.to_big_i
+    (-5.to_big_i - Int64::MAX).should eq(-Int64::MAX.to_big_i - 5)
 
     (5 - 1.to_big_i).should eq(4.to_big_i)
     (-5 - 1.to_big_i).should eq(-6.to_big_i)
@@ -82,6 +111,7 @@ describe "BigInt" do
     (2.to_big_i * 3_u8).should eq(6.to_big_i)
     (3 * 2.to_big_i).should eq(6.to_big_i)
     (3_u8 * 2.to_big_i).should eq(6.to_big_i)
+    (2.to_big_i * Int64::MAX).should eq(2.to_big_i * Int64::MAX.to_big_i)
   end
 
   it "gets absolute value" do
@@ -91,15 +121,59 @@ describe "BigInt" do
   it "divides" do
     (10.to_big_i / 3.to_big_i).should eq(3.to_big_i)
     (10.to_big_i / 3).should eq(3.to_big_i)
-    (10.to_big_i / -3).should eq(-3.to_big_i)
     (10 / 3.to_big_i).should eq(3.to_big_i)
+    ((Int64::MAX.to_big_i * 2.to_big_i) / Int64::MAX).should eq(2.to_big_i)
+  end
+
+  it "divides with negative numbers" do
+    (7.to_big_i / 2).should eq(3.to_big_i)
+    (7.to_big_i / 2.to_big_i).should eq(3.to_big_i)
+    (7.to_big_i / -2).should eq(-4.to_big_i)
+    (7.to_big_i / -2.to_big_i).should eq(-4.to_big_i)
+    (-7.to_big_i / 2).should eq(-4.to_big_i)
+    (-7.to_big_i / 2.to_big_i).should eq(-4.to_big_i)
+    (-7.to_big_i / -2).should eq(3.to_big_i)
+    (-7.to_big_i / -2.to_big_i).should eq(3.to_big_i)
+
+    (-6.to_big_i / 2).should eq(-3.to_big_i)
+    (6.to_big_i / -2).should eq(-3.to_big_i)
+    (-6.to_big_i / -2).should eq(3.to_big_i)
+  end
+
+  it "tdivs" do
+    5.to_big_i.tdiv(3).should eq(1)
+    -5.to_big_i.tdiv(3).should eq(-1)
+    5.to_big_i.tdiv(-3).should eq(-1)
+    -5.to_big_i.tdiv(-3).should eq(1)
   end
 
   it "does modulo" do
     (10.to_big_i % 3.to_big_i).should eq(1.to_big_i)
     (10.to_big_i % 3).should eq(1.to_big_i)
-    (10.to_big_i % -3).should eq(1.to_big_i)
     (10 % 3.to_big_i).should eq(1.to_big_i)
+  end
+
+  it "does modulo with negative numbers" do
+    (7.to_big_i % 2).should eq(1.to_big_i)
+    (7.to_big_i % 2.to_big_i).should eq(1.to_big_i)
+    (7.to_big_i % -2).should eq(-1.to_big_i)
+    (7.to_big_i % -2.to_big_i).should eq(-1.to_big_i)
+    (-7.to_big_i % 2).should eq(1.to_big_i)
+    (-7.to_big_i % 2.to_big_i).should eq(1.to_big_i)
+    (-7.to_big_i % -2).should eq(-1.to_big_i)
+    (-7.to_big_i % -2.to_big_i).should eq(-1.to_big_i)
+
+    (6.to_big_i % 2).should eq(0.to_big_i)
+    (6.to_big_i % -2).should eq(0.to_big_i)
+    (-6.to_big_i % 2).should eq(0.to_big_i)
+    (-6.to_big_i % -2).should eq(0.to_big_i)
+  end
+
+  it "does remainder with negative numbers" do
+    5.to_big_i.remainder(3).should eq(2)
+    -5.to_big_i.remainder(3).should eq(-2)
+    5.to_big_i.remainder(-3).should eq(2)
+    -5.to_big_i.remainder(-3).should eq(-2)
   end
 
   it "does bitwise and" do
@@ -136,29 +210,29 @@ describe "BigInt" do
   end
 
   it "raises if divides by zero" do
-    expect_raises DivisionByZero do
+    expect_raises DivisionByZeroError do
       10.to_big_i / 0.to_big_i
     end
 
-    expect_raises DivisionByZero do
+    expect_raises DivisionByZeroError do
       10.to_big_i / 0
     end
 
-    expect_raises DivisionByZero do
+    expect_raises DivisionByZeroError do
       10 / 0.to_big_i
     end
   end
 
   it "raises if mods by zero" do
-    expect_raises DivisionByZero do
+    expect_raises DivisionByZeroError do
       10.to_big_i % 0.to_big_i
     end
 
-    expect_raises DivisionByZero do
+    expect_raises DivisionByZeroError do
       10.to_big_i % 0
     end
 
-    expect_raises DivisionByZero do
+    expect_raises DivisionByZeroError do
       10 % 0.to_big_i
     end
   end
@@ -177,6 +251,39 @@ describe "BigInt" do
     a.to_s(2).should eq(b)
     a.to_s(16).should eq(c)
     a.to_s(32).should eq(d)
+  end
+
+  it "does to_big_f" do
+    a = BigInt.new("1234567890123456789")
+    a.to_big_f.should eq(BigFloat.new("1234567890123456789.0"))
+  end
+
+  describe "#inspect" do
+    it { "2".to_big_i.inspect.should eq("2_big_i") }
+  end
+
+  it "does gcd and lcm" do
+    # 3 primes
+    a = BigInt.new("48112959837082048697")
+    b = BigInt.new("12764787846358441471")
+    c = BigInt.new("36413321723440003717")
+    abc = a * b * c
+    a_17 = a * 17
+
+    (abc * b).gcd(abc * c).should eq(abc)
+    (abc * b).lcm(abc * c).should eq(abc * b * c)
+    (abc * b).gcd(abc * c).should be_a(BigInt)
+
+    (a_17).gcd(17).should eq(17)
+    (17).gcd(a_17).should eq(17)
+    (-a_17).gcd(17).should eq(17)
+    (-17).gcd(a_17).should eq(17)
+
+    (a_17).gcd(17).should be_a(Int::Unsigned)
+    (17).gcd(a_17).should be_a(Int::Unsigned)
+
+    (a_17).lcm(17).should eq(a_17)
+    (17).lcm(a_17).should eq(a_17)
   end
 
   it "can use Number::[]" do
@@ -202,12 +309,12 @@ describe "BigInt" do
     u64.should be_a(UInt64)
   end
 
-  ifdef x86_64
+  {% if flag?(:x86_64) %}
     # For 32 bits libgmp can't seem to be able to do it
     it "can cast UInt64::MAX to UInt64 (#2264)" do
       BigInt.new(UInt64::MAX).to_u64.should eq(UInt64::MAX)
     end
-  end
+  {% end %}
 
   it "does String#to_big_i" do
     "123456789123456789".to_big_i.should eq(BigInt.new("123456789123456789"))
@@ -219,13 +326,22 @@ describe "BigInt" do
   end
 
   it "#hash" do
-    hash = 5.to_big_i.hash
-    hash.should eq(5)
-    typeof(hash).should eq(UInt64)
+    b1 = 5.to_big_i
+    b2 = 5.to_big_i
+    b3 = 6.to_big_i
+
+    b1.hash.should eq(b2.hash)
+    b1.hash.should_not eq(b3.hash)
   end
 
   it "clones" do
     x = 1.to_big_i
     x.clone.should eq(x)
+  end
+end
+
+describe "BigInt Math" do
+  it "sqrt" do
+    Math.sqrt(BigInt.new("1" + "0"*48)).should eq(BigFloat.new("1" + "0"*24))
   end
 end

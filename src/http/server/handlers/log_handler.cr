@@ -1,14 +1,14 @@
 # A handler that logs the request method, resource, status code, and
 # the time used to execute the next handler, to the given `IO`.
-class HTTP::LogHandler < HTTP::Handler
+class HTTP::LogHandler
+  include HTTP::Handler
+
   # Initializes this handler to log to the given `IO`.
   def initialize(@io : IO = STDOUT)
   end
 
   def call(context)
-    time = Time.now
-    call_next(context)
-    elapsed = Time.now - time
+    elapsed = Time.measure { call_next(context) }
     elapsed_text = elapsed_text(elapsed)
 
     @io.puts "#{context.request.method} #{context.request.resource} - #{context.response.status_code} (#{elapsed_text})"

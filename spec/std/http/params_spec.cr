@@ -3,9 +3,14 @@ require "http/params"
 
 module HTTP
   describe Params do
+    describe ".new" do
+      Params.new.should eq(Params.parse(""))
+    end
+
     describe ".parse" do
       {
         {"", {} of String => Array(String)},
+        {"&&", {} of String => Array(String)},
         {"   ", {"   " => [""]}},
         {"foo=bar", {"foo" => ["bar"]}},
         {"foo=bar&foo=baz", {"foo" => ["bar", "baz"]}},
@@ -17,6 +22,7 @@ module HTTP
         {"foo", {"foo" => [""]}},
         {"foo=&bar", {"foo" => [""], "bar" => [""]}},
         {"bar&foo", {"bar" => [""], "foo" => [""]}},
+        {"foo=bar=qux", {"foo" => ["bar=qux"]}},
       }.each do |(from, to)|
         it "parses #{from}" do
           Params.parse(from).should eq(Params.new(to))
@@ -46,6 +52,18 @@ module HTTP
 
           encoded.should eq(to)
         end
+      end
+    end
+
+    describe ".encode" do
+      it "builds from hash" do
+        encoded = Params.encode({"foo" => "bar", "baz" => "quux"})
+        encoded.should eq("foo=bar&baz=quux")
+      end
+
+      it "builds from named tuple" do
+        encoded = Params.encode({foo: "bar", baz: "quux"})
+        encoded.should eq("foo=bar&baz=quux")
       end
     end
 
@@ -108,21 +126,6 @@ module HTTP
         params = Params.parse("foo=bar&foo=baz&baz=qux")
         params["non_existent_param"] = "test"
         params.fetch_all("non_existent_param").should eq(["test"])
-      end
-    end
-
-    describe "#fetch(name)" do
-      it "returns first value for provided param name" do
-        params = Params.parse("foo=bar&foo=baz&baz=qux")
-        params.fetch("foo").should eq("bar")
-        params.fetch("baz").should eq("qux")
-      end
-
-      it "raises KeyError when there is no such param" do
-        params = Params.parse("foo=bar&foo=baz&baz=qux")
-        expect_raises KeyError do
-          params.fetch("non_existent_param")
-        end
       end
     end
 
@@ -221,7 +224,7 @@ module HTTP
 
         params.delete("baz").should eq("qux")
         expect_raises KeyError do
-          params.fetch("baz")
+          params["baz"]
         end
       end
     end
@@ -232,8 +235,16 @@ module HTTP
 
         params.delete_all("foo").should eq(["bar", "baz"])
         expect_raises KeyError do
-          params.fetch("foo")
+          params["foo"]
         end
+      end
+    end
+
+    describe "#empty?" do
+      it "test empty?" do
+        Params.parse("foo=bar&foo=baz&baz=qux").empty?.should be_false
+        Params.parse("").empty?.should be_true
+        Params.new.empty?.should be_true
       end
     end
   end

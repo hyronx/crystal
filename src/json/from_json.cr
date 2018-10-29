@@ -1,7 +1,7 @@
 # Deserializes the given JSON in *string_or_io* into
 # an instance of `self`. This simply creates a `parser = JSON::PullParser`
 # and invokes `new(parser)`: classes that want to provide JSON
-# deserialization must provide an `def initialize(parser : JSON::PullParser`
+# deserialization must provide an `def initialize(parser : JSON::PullParser)`
 # method.
 #
 # ```
@@ -19,7 +19,7 @@ end
 # the value to deserialize.
 #
 # ```
-# Int32.from_json(%({"main": 1}), root: "main").should eq(1)
+# Int32.from_json(%({"main": 1}), root: "main") # => 1
 # ```
 def Object.from_json(string_or_io, root : String) : self
   parser = JSON::PullParser.new(string_or_io)
@@ -28,7 +28,7 @@ def Object.from_json(string_or_io, root : String) : self
   end
 end
 
-# Parses a String or IO denoting a JSON array, yielding
+# Parses a `String` or `IO` denoting a JSON array, yielding
 # each of its elements to the given block. This is useful
 # for decoding an array and processing its elements without
 # creating an Array in memory, which might be expensive.
@@ -49,7 +49,7 @@ end
 # 3
 # ```
 #
-# To parse and get an Array, use the block-less overload.
+# To parse and get an `Array`, use the block-less overload.
 def Array.from_json(string_or_io) : Nil
   parser = JSON::PullParser.new(string_or_io)
   new(parser) do |element|
@@ -133,7 +133,7 @@ def Hash.new(pull : JSON::PullParser)
 end
 
 def Tuple.new(pull : JSON::PullParser)
-  {% if true %}
+  {% begin %}
     pull.read_begin_array
     value = Tuple.new(
       {% for i in 0...T.size %}
@@ -151,6 +151,8 @@ def NamedTuple.new(pull : JSON::PullParser)
       %var{key.id} = nil
     {% end %}
 
+    location = pull.location
+
     pull.read_object do |key|
       case key
         {% for key, type in T %}
@@ -164,7 +166,7 @@ def NamedTuple.new(pull : JSON::PullParser)
 
     {% for key in T.keys %}
       if %var{key.id}.nil?
-        raise JSON::ParseException.new("missing json attribute: {{key}}", 0, 0)
+        raise JSON::ParseException.new("Missing json attribute: {{key}}", *location)
       end
     {% end %}
 
@@ -183,11 +185,13 @@ def Enum.new(pull : JSON::PullParser)
   when :string
     parse(pull.read_string)
   else
-    raise "expecting int or string in JSON for #{self.class}, not #{pull.kind}"
+    raise "Expecting int or string in JSON for #{self.class}, not #{pull.kind}"
   end
 end
 
 def Union.new(pull : JSON::PullParser)
+  location = pull.location
+
   # Optimization: use fast path for primitive types
   {% begin %}
     # Here we store types that are not primitive types
@@ -223,25 +227,37 @@ def Union.new(pull : JSON::PullParser)
       # Ignore
     end
   {% end %}
-  raise JSON::ParseException.new("couldn't parse #{self} from #{string}", 0, 0)
+  raise JSON::ParseException.new("Couldn't parse #{self} from #{string}", *location)
+end
+
+# Reads a string from JSON parser as a time formated according to [RFC 3339](https://tools.ietf.org/html/rfc3339)
+# or other variations of [ISO 8601](http://xml.coverpages.org/ISO-FDIS-8601.pdf).
+#
+# The JSON format itself does not specify a time data type, this method just
+# assumes that a string holding a ISO 8601 time format can be interpreted as a
+# time value.
+#
+# See `#to_json` for reference.
+def Time.new(pull : JSON::PullParser)
+  Time::Format::ISO_8601_DATE_TIME.parse(pull.read_string)
 end
 
 struct Time::Format
   def from_json(pull : JSON::PullParser)
     string = pull.read_string
-    parse(string)
+    parse(string, Time::Location::UTC)
   end
 end
 
 module Time::EpochConverter
   def self.from_json(value : JSON::PullParser) : Time
-    Time.epoch(value.read_int)
+    Time.unix(value.read_int)
   end
 end
 
 module Time::EpochMillisConverter
   def self.from_json(value : JSON::PullParser) : Time
-    Time.epoch_ms(value.read_int)
+    Time.unix_ms(value.read_int)
   end
 end
 

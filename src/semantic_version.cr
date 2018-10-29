@@ -19,7 +19,7 @@ class SemanticVersion
       build = m[7]?
       new major, minor, patch, prerelease, build
     else
-      raise ArgumentError.new("not a semantic version: #{str.inspect}")
+      raise ArgumentError.new("Not a semantic version: #{str.inspect}")
     end
   end
 
@@ -32,18 +32,18 @@ class SemanticVersion
                   when nil
                     Prerelease.new
                   else
-                    raise ArgumentError.new("invalid prerelease #{prerelease.inspect}")
+                    raise ArgumentError.new("Invalid prerelease #{prerelease.inspect}")
                   end
   end
 
   def to_s(io : IO)
-    io << major << "." << minor << "." << patch
+    io << major << '.' << minor << '.' << patch
     unless prerelease.identifiers.empty?
-      io << "-"
+      io << '-'
       prerelease.to_s io
     end
     if build
-      io << "+" << build
+      io << '+' << build
     end
   end
 
@@ -64,7 +64,7 @@ class SemanticVersion
   struct Prerelease
     def self.parse(str : String) : self
       identifiers = [] of String | Int32
-      str.split(".").each do |val|
+      str.split('.').each do |val|
         if val.match /^\d+$/
           identifiers << val.to_i32
         else
@@ -80,10 +80,7 @@ class SemanticVersion
     end
 
     def to_s(io : IO)
-      identifiers.each_with_index do |s, i|
-        io << "." if i > 0
-        io << s
-      end
+      identifiers.join(".", io)
     end
 
     def <=>(other : self) : Int32
@@ -100,7 +97,7 @@ class SemanticVersion
       end
 
       identifiers.each_with_index do |item, i|
-        return 1 if i >= other.identifiers.size # larger = higher precedenc
+        return 1 if i >= other.identifiers.size # larger = higher precedence
 
         oitem = other.identifiers[i]
         r = compare item, oitem

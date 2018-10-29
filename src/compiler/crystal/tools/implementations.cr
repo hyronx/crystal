@@ -1,14 +1,14 @@
 require "../syntax/ast"
 require "../compiler"
+require "./typed_def_processor"
 require "json"
 
 module Crystal
   class ImplementationResult
-    JSON.mapping({
-      status:          {type: String},
-      message:         {type: String},
-      implementations: {type: Array(ImplementationTrace), nilable: true},
-    })
+    include JSON::Serializable
+    property status : String
+    property message : String
+    property implementations : Array(ImplementationTrace)?
 
     def initialize(@status, @message)
     end
@@ -32,13 +32,13 @@ module Crystal
   # It keeps track of macro expansion in a human friendly way and
   # pointing to the exact line an expansion and method definition occurs.
   class ImplementationTrace
-    JSON.mapping({
-      line:     {type: Int32},
-      column:   {type: Int32},
-      filename: {type: String},
-      macro:    {type: String, nilable: true},
-      expands:  {type: ImplementationTrace, nilable: true},
-    })
+    include JSON::Serializable
+
+    property line : Int32
+    property column : Int32
+    property filename : String
+    property macro : String?
+    property expands : ImplementationTrace?
 
     def initialize(loc : Location)
       f = loc.filename
@@ -84,44 +84,16 @@ module Crystal
   end
 
   class ImplementationsVisitor < Visitor
+    include TypedDefProcessor
+
     getter locations : Array(Location)
 
     def initialize(@target_location : Location)
       @locations = [] of Location
     end
 
-    def process_type(type)
-      if type.is_a?(NamedType)
-        type.types?.try &.values.each do |inner_type|
-          process_type(inner_type)
-        end
-      end
-
-      process_type type.metaclass if type.metaclass != type
-
-      if type.is_a?(DefInstanceContainer)
-        type.def_instances.values.try do |typed_defs|
-          typed_defs.each do |typed_def|
-            typed_def.accept(self)
-          end
-        end
-      end
-
-      if type.is_a?(GenericType)
-        type.generic_types.values.each do |instanced_type|
-          process_type(instanced_type)
-        end
-      end
-    end
-
     def process(result : Compiler::Result)
-      result.program.def_instances.each_value do |typed_def|
-        typed_def.accept(self)
-      end
-
-      result.program.types?.try &.values.each do |type|
-        process_type type
-      end
+      process_result result
 
       result.node.accept(self)
 

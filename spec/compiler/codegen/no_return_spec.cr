@@ -61,4 +61,32 @@ describe "Code gen: no return" do
       Foo.new.x
       )).to_i.should eq(1)
   end
+
+  it "codegens call with no return because of falsey if (#3661)" do
+    codegen(%(
+      lib LibC
+        fun exit(Int32) : NoReturn
+      end
+
+      def bar(x)
+        x
+      end
+
+      def foo
+        bar(yield 1)
+      end
+
+      foo do |x|
+        LibC.exit(0) unless false
+      end
+      ))
+  end
+
+  it "codegens untyped typeof (#5105)" do
+    codegen(%(
+      require "prelude"
+
+      typeof(raise("").foo)
+      ))
+  end
 end

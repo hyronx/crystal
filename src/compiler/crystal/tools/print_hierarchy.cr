@@ -3,16 +3,23 @@ require "colorize"
 require "../syntax/ast"
 
 module Crystal
-  def self.print_hierarchy(program, exp)
-    HierarchyPrinter.new(program, exp).execute
+  def self.print_hierarchy(program, exp, format)
+    case format
+    when "text"
+      HierarchyPrinter.new(program, exp).execute
+    when "json"
+      JSONHierarchyPrinter.new(program, exp).execute
+    end
   end
 
   class HierarchyPrinter
+    @llvm_typer : LLVMTyper
+
     def initialize(@program : Program, exp : String?)
       @exp = exp ? Regex.new(exp) : nil
       @indents = [] of Bool
       @targets = Set(Type).new
-      @llvm_typer = LLVMTyper.new(@program)
+      @llvm_typer = @program.llvm_typer
     end
 
     def execute
@@ -20,7 +27,7 @@ module Crystal
         compute_targets(@program.types, exp, false)
       end
 
-      with_color.light_gray.bold.push(STDOUT) do
+      with_color.light_gray.bold.surround(STDOUT) do
         print_type @program.object
       end
     end
@@ -119,7 +126,7 @@ module Crystal
       if (type.is_a?(NonGenericClassType) || type.is_a?(GenericClassInstanceType)) &&
          !type.is_a?(PointerInstanceType) && !type.is_a?(ProcInstanceType)
         size = @llvm_typer.size_of(@llvm_typer.llvm_struct_type(type))
-        with_color.light_gray.push(STDOUT) do
+        with_color.light_gray.surround(STDOUT) do
           print " ("
           print size.to_s
           print " bytes)"
@@ -155,12 +162,12 @@ module Crystal
     end
 
     def print_instance_vars(type : GenericClassType, has_subtypes)
-      instance_vars = type.declared_instance_vars
-      return unless instance_vars
+      instance_vars = type.instance_vars
+      return if instance_vars.empty?
 
       max_name_size = instance_vars.keys.max_of &.size
 
-      instance_vars.each do |name, types|
+      instance_vars.each do |name, var|
         print_indent
         print (@indents.last ? "|" : " ")
         if has_subtypes
@@ -169,11 +176,10 @@ module Crystal
           print "      "
         end
 
-        with_color.light_gray.push(STDOUT) do
+        with_color.light_gray.surround(STDOUT) do
           print name.ljust(max_name_size)
-          next if types.size == 0
           print " : "
-          print types.join " | "
+          print var
         end
         puts
       end
@@ -205,13 +211,13 @@ module Crystal
           print "      "
         end
 
-        with_color.light_gray.push(STDOUT) do
+        with_color.light_gray.surround(STDOUT) do
           print ivar.name.ljust(max_name_size)
           print " : "
           if ivar_type = ivar.type?
             print ivar_type.to_s.ljust(max_type_size)
             size = @llvm_typer.size_of(@llvm_typer.llvm_embedded_type(ivar_type))
-            with_color.light_gray.push(STDOUT) do
+            with_color.light_gray.surround(STDOUT) do
               print " ("
               print size.to_s.rjust(max_bytes_size)
               print " bytes)"
@@ -258,6 +264,94 @@ module Crystal
 
     def with_color
       ::with_color.toggle(@program.color?)
+    end
+  end
+
+  class JSONHierarchyPrinter < HierarchyPrinter
+    def execute
+      if exp = @exp
+        compute_targets(@program.types, exp, false)
+      end
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          print_type(@program.object, json)
+        end
+      end
+    end
+
+    def print_subtypes(types, json)
+      types = types.sort_by &.to_s
+
+      json.field "sub_types" do
+        json.array do
+          types.each_with_index do |type, index|
+            if must_print? type
+              json.object do
+                print_type(type, json)
+              end
+            end
+          end
+        end
+      end
+    end
+
+    def print_type_name(type, json)
+      json.field "name", type.to_s
+      json.field "kind", type.struct? ? "struct" : "class"
+
+      if (type.is_a?(NonGenericClassType) || type.is_a?(GenericClassInstanceType)) &&
+         !type.is_a?(PointerInstanceType) && !type.is_a?(ProcInstanceType)
+        json.field "size_in_bytes", @llvm_typer.size_of(@llvm_typer.llvm_struct_type(type))
+      end
+    end
+
+    def print_type(type : GenericClassType | NonGenericClassType | GenericClassInstanceType, json)
+      print_type_name(type, json)
+      subtypes = type.subclasses.select { |sub| must_print?(sub) }
+
+      print_instance_vars(type, !subtypes.empty?, json)
+      print_subtypes(subtypes, json)
+    end
+
+    def print_type(type, json)
+      # Nothing to do
+    end
+
+    def print_instance_vars(type : GenericClassType, has_subtypes, json)
+      instance_vars = type.instance_vars
+      return if instance_vars.empty?
+
+      json.field "instance_vars" do
+        json.array do
+          instance_vars.each do |name, var|
+            json.object do
+              json.field "name", name.to_s
+              json.field "type", var.to_s
+            end
+          end
+        end
+      end
+    end
+
+    def print_instance_vars(type, has_subtypes, json)
+      instance_vars = type.instance_vars
+      return if instance_vars.empty?
+
+      instance_vars = instance_vars.values
+      json.field "instance_vars" do
+        json.array do
+          instance_vars.each do |instance_var|
+            if ivar_type = instance_var.type?
+              json.object do
+                json.field "name", instance_var.name.to_s
+                json.field "type", ivar_type.to_s
+                json.field "size_in_bytes", @llvm_typer.size_of(@llvm_typer.llvm_embedded_type(ivar_type))
+              end
+            end
+          end
+        end
+      end
     end
   end
 end

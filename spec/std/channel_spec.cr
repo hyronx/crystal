@@ -1,5 +1,10 @@
 require "spec"
 
+private def yield_to(fiber)
+  Crystal::Scheduler.enqueue(Fiber.current)
+  Crystal::Scheduler.resume(fiber)
+end
+
 describe Channel do
   it "creates unbuffered with no arguments" do
     Channel(Int32).new.should be_a(Channel::Unbuffered(Int32))
@@ -40,17 +45,22 @@ describe Channel::Unbuffered do
   it "blocks if there is no receiver" do
     ch = Channel::Unbuffered(Int32).new
     state = 0
-    spawn do
+    main = Fiber.current
+
+    sender = Fiber.new do
       state = 1
       ch.send 123
       state = 2
+    ensure
+      yield_to(main)
     end
 
-    Fiber.yield
+    yield_to(sender)
     state.should eq(1)
     ch.receive.should eq(123)
     state.should eq(1)
-    Fiber.yield
+
+    sleep
     state.should eq(2)
   end
 
@@ -67,8 +77,8 @@ describe Channel::Unbuffered do
     ch = Channel::Unbuffered(Int32).new
     ch.full?.should be_true
     ch.empty?.should be_true
-    spawn { ch.send 123 }
-    Fiber.yield
+    sender = Fiber.new { ch.send 123 }
+    yield_to(sender)
     ch.empty?.should be_false
     ch.full?.should be_true
     ch.receive.should eq(123)
@@ -78,13 +88,18 @@ describe Channel::Unbuffered do
     ch1 = Channel::Unbuffered(Int32).new
     ch2 = Channel::Unbuffered(Int32).new
     spawn { ch1.send 123 }
-    Channel.select(ch1.receive_op, ch2.receive_op).should eq({0, 123})
+    Channel.select(ch1.receive_select_action, ch2.receive_select_action).should eq({0, 123})
+  end
+
+  it "works with select else" do
+    ch1 = Channel::Unbuffered(Int32).new
+    Channel.select({ch1.receive_select_action}, true).should eq({1, nil})
   end
 
   it "can send and receive nil" do
     ch = Channel::Unbuffered(Nil).new
-    spawn { ch.send nil }
-    Fiber.yield
+    sender = Fiber.new { ch.send nil }
+    yield_to(sender)
     ch.empty?.should be_false
     ch.receive.should be_nil
     ch.empty?.should be_true
@@ -108,10 +123,19 @@ describe Channel::Unbuffered do
   it "can be closed from different fiber" do
     ch = Channel::Unbuffered(Int32).new
     received = false
-    spawn { expect_raises(Channel::ClosedError) { ch.receive }; received = true }
-    Fiber.yield
+    main = Fiber.current
+
+    receiver = Fiber.new do
+      expect_raises(Channel::ClosedError) { ch.receive }
+      received = true
+    ensure
+      yield_to(main)
+    end
+
+    yield_to(receiver)
     ch.close
-    Fiber.yield
+
+    sleep
     received.should be_true
   end
 
@@ -131,6 +155,46 @@ describe Channel::Unbuffered do
     ch = Channel::Unbuffered(Int32).new
     spawn { ch.send 123 }
     ch.receive?.should eq(123)
+  end
+
+  it "wakes up sender fiber when channel is closed" do
+    ch = Channel::Unbuffered(Nil).new
+    closed = false
+    main = Fiber.current
+
+    sender = Fiber.new do
+      ch.send(nil)
+      closed = ch.closed?
+      yield_to(main)
+    end
+
+    yield_to(sender)
+
+    ch.close
+    sleep
+
+    closed.should be_true
+  end
+
+  it "wakes up receiver fibers when channel is closed" do
+    ch = Channel::Unbuffered(Nil).new
+    closed = false
+    main = Fiber.current
+
+    receiver = Fiber.new do
+      ch.receive
+    rescue Channel::ClosedError
+      closed = ch.closed?
+    ensure
+      yield_to(main)
+    end
+
+    yield_to(receiver)
+
+    ch.close
+    sleep
+
+    closed.should be_true
   end
 end
 
@@ -163,9 +227,8 @@ describe Channel::Buffered do
   it "doesn't block when not full" do
     ch = Channel::Buffered(Int32).new
     done = false
-    spawn { ch.send 123; done = true }
-    done.should be_false
-    Fiber.yield
+    sender = Fiber.new { ch.send 123; done = true }
+    yield_to(sender)
     done.should be_true
   end
 
@@ -180,13 +243,13 @@ describe Channel::Buffered do
     ch1 = Channel::Buffered(Int32).new
     ch2 = Channel::Buffered(Int32).new
     spawn { ch1.send 123 }
-    Channel.select(ch1.receive_op, ch2.receive_op).should eq({0, 123})
+    Channel.select(ch1.receive_select_action, ch2.receive_select_action).should eq({0, 123})
   end
 
   it "can send and receive nil" do
     ch = Channel::Buffered(Nil).new
-    spawn { ch.send nil }
-    Fiber.yield
+    sender = Fiber.new { ch.send nil }
+    yield_to(sender)
     ch.empty?.should be_false
     ch.receive.should be_nil
     ch.empty?.should be_true
@@ -210,10 +273,18 @@ describe Channel::Buffered do
   it "can be closed from different fiber" do
     ch = Channel::Buffered(Int32).new
     received = false
-    spawn { expect_raises(Channel::ClosedError) { ch.receive }; received = true }
-    Fiber.yield
+    main = Fiber.current
+
+    receiver = Fiber.new do
+      expect_raises(Channel::ClosedError) { ch.receive }
+      received = true
+    ensure
+      yield_to(main)
+    end
+
+    yield_to(receiver)
     ch.close
-    Fiber.yield
+    sleep
     received.should be_true
   end
 
@@ -243,5 +314,15 @@ describe Channel::Buffered do
   it "does inspect on buffered channel" do
     ch = Channel::Buffered(Int32).new(10)
     ch.inspect.should eq("#<Channel::Buffered(Int32):0x#{ch.object_id.to_s(16)}>")
+  end
+
+  it "does pretty_inspect on unbuffered channel" do
+    ch = Channel::Unbuffered(Int32).new
+    ch.pretty_inspect.should eq("#<Channel::Unbuffered(Int32):0x#{ch.object_id.to_s(16)}>")
+  end
+
+  it "does pretty_inspect on buffered channel" do
+    ch = Channel::Buffered(Int32).new(10)
+    ch.pretty_inspect.should eq("#<Channel::Buffered(Int32):0x#{ch.object_id.to_s(16)}>")
   end
 end

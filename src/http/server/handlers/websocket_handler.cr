@@ -1,31 +1,42 @@
 require "base64"
 require "../../web_socket"
 
-ifdef without_openssl
+{% if flag?(:without_openssl) %}
   require "digest/sha1"
-else
+{% else %}
   require "openssl/sha1"
-end
+{% end %}
 
-class HTTP::WebSocketHandler < HTTP::Handler
+class HTTP::WebSocketHandler
+  include HTTP::Handler
+
   def initialize(&@proc : WebSocket, Server::Context ->)
   end
 
   def call(context)
-    if context.request.headers["Upgrade"]? == "websocket" && context.request.headers.includes_word?("Connection", "Upgrade")
-      key = context.request.headers["Sec-Websocket-Key"]
+    if websocket_upgrade_request? context.request
+      response = context.response
 
-      ifdef without_openssl
-        accept_code = Digest::SHA1.base64digest("#{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-      else
-        accept_code = Base64.strict_encode(OpenSSL::SHA1.hash("#{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+      version = context.request.headers["Sec-WebSocket-Version"]?
+      unless version == WebSocket::Protocol::VERSION
+        response.status_code = 426
+        response.headers["Sec-WebSocket-Version"] = WebSocket::Protocol::VERSION
+        return
       end
 
-      response = context.response
+      key = context.request.headers["Sec-WebSocket-Key"]?
+
+      unless key
+        response.status_code = 400
+        return
+      end
+
+      accept_code = WebSocket::Protocol.key_challenge(key)
+
       response.status_code = 101
       response.headers["Upgrade"] = "websocket"
       response.headers["Connection"] = "Upgrade"
-      response.headers["Sec-Websocket-Accept"] = accept_code
+      response.headers["Sec-WebSocket-Accept"] = accept_code
       response.upgrade do |io|
         ws_session = WebSocket.new(io)
         @proc.call(ws_session, context)
@@ -35,5 +46,12 @@ class HTTP::WebSocketHandler < HTTP::Handler
     else
       call_next(context)
     end
+  end
+
+  private def websocket_upgrade_request?(request)
+    return false unless upgrade = request.headers["Upgrade"]?
+    return false unless upgrade.compare("websocket", case_insensitive: true) == 0
+
+    request.headers.includes_word?("Connection", "Upgrade")
   end
 end

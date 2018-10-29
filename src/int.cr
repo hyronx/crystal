@@ -56,11 +56,11 @@
 # 0xfe012d # == 16646445
 # ```
 struct Int
-  alias Signed = Int8 | Int16 | Int32 | Int64
-  alias Unsigned = UInt8 | UInt16 | UInt32 | UInt64
+  alias Signed = Int8 | Int16 | Int32 | Int64 | Int128
+  alias Unsigned = UInt8 | UInt16 | UInt32 | UInt64 | UInt128
   alias Primitive = Signed | Unsigned
 
-  # Returns a `Char` that has the unicode codepoint of *self*.
+  # Returns a `Char` that has the unicode codepoint of `self`.
   #
   # Raises `ArgumentError` if this integer's value doesn't fit a char's range (`0..0x10ffff`).
   #
@@ -78,21 +78,97 @@ struct Int
     self ^ -1
   end
 
-  def /(x : Int)
-    if x == 0
-      raise DivisionByZero.new
+  # Divides `self` by *other* using floored division.
+  #
+  # In floored division, given two integers x and y:
+  # * q = x / y is rounded toward negative infinity
+  # * r = x % y has the sign of the second argument
+  # * x == q*y + r
+  #
+  # For example:
+  #
+  # ```text
+  #  x     y     x / y     x % y
+  #  5     3       1         2
+  # -5     3      -2         1
+  #  5    -3      -2        -1
+  # -5    -3       1        -2
+  # ```
+  #
+  # Raises if *other* is zero, or if *other* is -1 and
+  # `self` is signed and is the minimum value for that
+  # integer type.
+  def //(other : Int)
+    check_div_argument other
+
+    div = unsafe_div other
+    mod = unsafe_mod other
+    div -= 1 if other > 0 ? mod < 0 : mod > 0
+    div
+  end
+
+  # Divides `self` by *other* as floating point numbers and
+  # applies the floor function to that result.
+  #
+  # The result will be of the same type as `self`.
+  def //(other : Float)
+    self.class.new(to_f // other)
+  end
+
+  def /(other : Int)
+    self // other
+  end
+
+  # Divides `self` by *other* using truncated division.
+  #
+  # In truncated division, given two integers x and y:
+  # * `q = x.tdiv(y)` is rounded toward zero
+  # * `r = x.remainder(y)` has the sign of the first argument
+  # * `x == q*y + r`
+  #
+  # For example:
+  #
+  # ```text
+  #  x     y     x / y     x % y
+  #  5     3       1         2
+  # -5     3      -1        -2
+  #  5    -3      -1         2
+  # -5    -3       1        -2
+  # ```
+  #
+  # Raises if *other* is `0`, or if *other* is `-1` and
+  # `self` is signed and is the minimum value for that
+  # integer type.
+  def tdiv(other : Int)
+    check_div_argument other
+
+    unsafe_div other
+  end
+
+  private def check_div_argument(other)
+    if other == 0
+      raise DivisionByZeroError.new
     end
 
-    unsafe_div x
+    {% begin %}
+      if self < 0 && self == {{@type}}::MIN && other == -1
+        raise ArgumentError.new "Overflow: {{@type}}::MIN / -1"
+      end
+    {% end %}
   end
 
   def fdiv(other)
     to_f / other
   end
 
+  # Returns `self` modulo *other*.
+  #
+  # This uses floored division.
+  #
+  # See `Int#/` for more details.
   def %(other : Int)
     if other == 0
-      raise DivisionByZero.new
+      raise DivisionByZeroError.new
     elsif (self ^ other) >= 0
       self.unsafe_mod(other)
     else
@@ -101,9 +177,14 @@ struct Int
     end
   end
 
+  # Returns `self` remainder *other*.
+  #
+  # This uses truncated division.
+  #
+  # See `Int#div` for more details.
   def remainder(other : Int)
     if other == 0
-      raise DivisionByZero.new
+      raise DivisionByZeroError.new
     else
       unsafe_mod other
     end
@@ -139,10 +220,10 @@ struct Int
   # * If *count* is negative, a right shift is performed
   #
   # ```
-  # 8000 << 1  # => 4000
-  # 8000 << 2  # => 2000
+  # 8000 << 1  # => 16000
+  # 8000 << 2  # => 32000
   # 8000 << 32 # => 0
-  # 8000 << -1 # => 16000
+  # 8000 << -1 # => 4000
   # ```
   def <<(count : Int)
     if count < 0
@@ -174,7 +255,7 @@ struct Int
     self
   end
 
-  # Returns the value of raising *self* to the power of *exponent*.
+  # Returns the value of raising `self` to the power of *exponent*.
   #
   # Raises `ArgumentError` if *exponent* is negative: if this is needed,
   # either use a float base or a float exponent.
@@ -186,14 +267,20 @@ struct Int
   # ```
   def **(exponent : Int) : self
     if exponent < 0
-      raise ArgumentError.new "cannot raise an integer to a negative integer power, use floats for that"
+      raise ArgumentError.new "Cannot raise an integer to a negative integer power, use floats for that"
     end
 
-    # TODO: this can probably be optimized by not using float pow
-    self.class.new(to_f ** exponent)
+    result = self.class.new(1)
+    k = self
+    while exponent > 0
+      result *= k if exponent & 0b1 != 0
+      k *= k
+      exponent = exponent.unsafe_shr(1)
+    end
+    result
   end
 
-  # Returns the value of raising *self* to the power of *exponent*.
+  # Returns the value of raising `self` to the power of *exponent*.
   #
   # ```
   # 2 ** 3.0  # => 8.0
@@ -221,6 +308,17 @@ struct Int
     self >> bit & 1
   end
 
+  # Returns `true` if all bits in *mask* are set on `self`.
+  #
+  # ```
+  # 0b0110.bits_set?(0b0110) # => true
+  # 0b1101.bits_set?(0b0111) # => false
+  # 0b1101.bits_set?(0b1100) # => true
+  # ```
+  def bits_set?(mask)
+    (self & mask) == mask
+  end
+
   def gcd(other : Int)
     self == 0 ? other.abs : (other % self).gcd(self)
   end
@@ -241,8 +339,9 @@ struct Int
     !even?
   end
 
-  def hash
-    self
+  # See `Object#hash(hasher)`
+  def hash(hasher)
+    hasher.int(self)
   end
 
   def succ
@@ -253,70 +352,67 @@ struct Int
     self - 1
   end
 
-  def times(&block : self ->)
+  def times(&block : self ->) : Nil
     i = self ^ self
     while i < self
       yield i
       i += 1
     end
-    self
   end
 
   def times
     TimesIterator(typeof(self)).new(self)
   end
 
-  def upto(n, &block : self ->)
+  def upto(to, &block : self ->) : Nil
+    return unless self <= to
     x = self
-    while x <= n
+    while true
       yield x
+      return if x == to
       x += 1
     end
-    self
   end
 
-  def upto(n)
-    UptoIterator(typeof(self), typeof(n)).new(self, n)
+  def upto(to)
+    UptoIterator(typeof(self), typeof(to)).new(self, to)
   end
 
-  def downto(n, &block : self ->)
+  def downto(to, &block : self ->) : Nil
+    return unless self >= to
     x = self
-    while x >= n
+    while true
       yield x
+      return if x == to
       x -= 1
     end
-    self
   end
 
-  def downto(n)
-    DowntoIterator(typeof(self), typeof(n)).new(self, n)
+  def downto(to)
+    DowntoIterator(typeof(self), typeof(to)).new(self, to)
   end
 
-  def to(n, &block : self ->)
-    if self < n
-      upto(n) { |i| yield i }
-    elsif self > n
-      downto(n) { |i| yield i }
+  def to(to, &block : self ->) : Nil
+    if self < to
+      upto(to) { |i| yield i }
+    elsif self > to
+      downto(to) { |i| yield i }
     else
       yield self
     end
-    self
   end
 
-  def to(n)
-    self <= n ? upto(n) : downto(n)
+  def to(to)
+    self <= to ? upto(to) : downto(to)
   end
 
   def modulo(other)
     self % other
   end
 
-  # :nodoc:
-  DIGITS_DOWNCASE = "0123456789abcdefghijklmnopqrstuvwxyz"
-  # :nodoc:
-  DIGITS_UPCASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  # :nodoc:
-  DIGITS_BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  private DIGITS_DOWNCASE = "0123456789abcdefghijklmnopqrstuvwxyz"
+  private DIGITS_UPCASE   = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  private DIGITS_BASE62   = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
   def to_s
     to_s(10)
@@ -361,8 +457,10 @@ struct Int
   end
 
   private def internal_to_s(base, upcase = false)
-    chars = uninitialized UInt8[65]
-    ptr_end = chars.to_unsafe + 64
+    # Given sizeof(self) <= 128 bits, we need at most 128 bytes for a base 2
+    # representation, plus one byte for the trailing 0.
+    chars = uninitialized UInt8[129]
+    ptr_end = chars.to_unsafe + 128
     ptr = ptr_end
     num = self
 
@@ -373,7 +471,7 @@ struct Int
     while num != 0
       ptr -= 1
       ptr.value = digits[num.remainder(base).abs]
-      num /= base
+      num = num.tdiv(base)
     end
 
     if neg
@@ -385,17 +483,36 @@ struct Int
     yield ptr, count
   end
 
+  def inspect(io)
+    type = case self
+           when Int8    then "_i8"
+           when Int16   then "_i16"
+           when Int32   then ""
+           when Int64   then "_i64"
+           when Int128  then "_i128"
+           when UInt8   then "_u8"
+           when UInt16  then "_u16"
+           when UInt32  then "_u32"
+           when UInt64  then "_u64"
+           when UInt128 then "_u128"
+           else              raise "BUG: impossible"
+           end
+
+    to_s(io)
+    io << type
+  end
+
   # Writes this integer to the given *io* in the given *format*.
   #
-  # See `IO#write_bytes`.
+  # See also: `IO#write_bytes`.
   def to_io(io : IO, format : IO::ByteFormat)
     format.encode(self, io)
   end
 
   # Reads an integer from the given *io* in the given *format*.
   #
-  # See `IO#read_bytes`.
-  def self.from_io(io : IO, format : IO::ByteFormat)
+  # See also: `IO#read_bytes`.
+  def self.from_io(io : IO, format : IO::ByteFormat) : self
     format.decode(self, io)
   end
 
@@ -403,18 +520,17 @@ struct Int
   #
   # ```
   # 5.popcount   # => 2
-  # -15.popcount # => 5
+  # -15.popcount # => 29
   # ```
   abstract def popcount
 
-  # :nodoc:
-  class TimesIterator(T)
+  private class TimesIterator(T)
     include Iterator(T)
 
     @n : T
-    @index : Int32
+    @index : T
 
-    def initialize(@n : T, @index = 0)
+    def initialize(@n : T, @index = T.zero)
     end
 
     def next
@@ -428,63 +544,63 @@ struct Int
     end
 
     def rewind
-      @index = 0
+      @index = T.zero
       self
     end
   end
 
-  # :nodoc:
-  class UptoIterator(T, N)
+  private class UptoIterator(T, N)
     include Iterator(T)
 
     @from : T
     @to : N
     @current : T
+    @done : Bool
 
     def initialize(@from : T, @to : N)
       @current = @from
+      @done = !(@from <= @to)
     end
 
     def next
-      if @current > @to
-        stop
-      else
-        value = @current
-        @current += 1
-        value
-      end
+      return stop if @done
+      value = @current
+      @done = @current == @to
+      @current += 1 unless @done
+      value
     end
 
     def rewind
       @current = @from
+      @done = !(@from <= @to)
       self
     end
   end
 
-  # :nodoc:
-  class DowntoIterator(T, N)
+  private class DowntoIterator(T, N)
     include Iterator(T)
 
     @from : T
     @to : N
     @current : T
+    @done : Bool
 
     def initialize(@from : T, @to : N)
       @current = @from
+      @done = !(@from >= @to)
     end
 
     def next
-      if @current < @to
-        stop
-      else
-        value = @current
-        @current -= 1
-        value
-      end
+      return stop if @done
+      value = @current
+      @done = @current == @to
+      @current -= 1 unless @done
+      value
     end
 
     def rewind
       @current = @from
+      @done = !(@from >= @to)
       self
     end
   end
@@ -578,6 +694,30 @@ struct Int64
   end
 end
 
+struct Int128
+  # TODO: eventually update to literals once UInt128 bit support is finished
+  MIN = new(1) << 127
+  MAX = ~MIN
+
+  # Returns an `Int128` by invoking `to_i128` on *value*.
+  def self.new(value)
+    value.to_i128
+  end
+
+  def -
+    # TODO: use 0_i128 - self
+    Int128.new(0) - self
+  end
+
+  def popcount
+    Intrinsics.popcount128(self)
+  end
+
+  def clone
+    self
+  end
+end
+
 struct UInt8
   MIN =   0_u8
   MAX = 255_u8
@@ -659,6 +799,29 @@ struct UInt64
 
   def popcount
     Intrinsics.popcount64(self)
+  end
+
+  def clone
+    self
+  end
+end
+
+struct UInt128
+  # TODO: eventually update to literals once UInt128 bit support is finished
+  MIN = new 0
+  MAX = ~MIN
+
+  # Returns an `UInt128` by invoking `to_u128` on *value*.
+  def self.new(value)
+    value.to_u128
+  end
+
+  def abs
+    self
+  end
+
+  def popcount
+    Intrinsics.popcount128(self)
   end
 
   def clone

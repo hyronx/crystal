@@ -1,5 +1,5 @@
 require "spec"
-require "big_int"
+require "big"
 
 struct RangeSpecIntWrapper
   include Comparable(self)
@@ -353,6 +353,30 @@ describe "Range" do
 
     it "is not empty with ... and begin.succ == end" do
       (1...2).step(1).to_a.should eq([1])
+    end
+  end
+
+  describe "map" do
+    it "optimizes for int range" do
+      (5..12).map(&.itself).should eq([5, 6, 7, 8, 9, 10, 11, 12])
+      (5...12).map(&.itself).should eq([5, 6, 7, 8, 9, 10, 11])
+      (5..4).map(&.itself).size.should eq(0)
+    end
+
+    it "works for other types" do
+      ('a'..'c').map(&.itself).should eq(['a', 'b', 'c'])
+    end
+  end
+
+  describe "size" do
+    it "optimizes for int range" do
+      (5..12).size.should eq(8)
+      (5...12).size.should eq(7)
+      (5..4).size.should eq(0)
+    end
+
+    it "works for other types" do
+      ('a'..'c').size.should eq(3)
     end
   end
 

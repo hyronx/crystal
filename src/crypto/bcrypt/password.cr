@@ -4,6 +4,8 @@ require "../subtle"
 # Generate, read and verify `Crypto::Bcrypt` hashes.
 #
 # ```
+# require "crypto/bcrypt/password"
+#
 # password = Crypto::Bcrypt::Password.create("super secret", cost: 10)
 # # => $2a$10$rI4xRiuAN2fyiKwynO6PPuorfuoM4L2PVv6hlnVJEmNLjqcibAfHq
 #
@@ -33,11 +35,11 @@ class Crypto::Bcrypt::Password
   # ```
   # password = Crypto::Bcrypt::Password.new("$2a$10$X6rw/jDiLBuzHV./JjBNXe8/Po4wTL0fhdDNdAdjcKN/Fup8tGCya")
   # password.version # => "2a"
-  # password.salt    # => X6rw/jDiLBuzHV./JjBNXe
-  # password.digest  # => 8/Po4wTL0fhdDNdAdjcKN/Fup8tGCya
+  # password.salt    # => "X6rw/jDiLBuzHV./JjBNXe"
+  # password.digest  # => "8/Po4wTL0fhdDNdAdjcKN/Fup8tGCya"
   # ```
   def initialize(@raw_hash : String)
-    parts = @raw_hash.split("$")
+    parts = @raw_hash.split('$')
 
     @version = parts[1]
     @cost = parts[2].to_i
@@ -56,7 +58,7 @@ class Crypto::Bcrypt::Password
   # password == "wrong secret" # => false
   # password == "super secret" # => true
   # ```
-  def ==(password)
+  def ==(password : String) : Bool
     hashed_password = Bcrypt.new(password, salt, cost)
     Crypto::Subtle.constant_time_compare(@raw_hash, hashed_password)
   end

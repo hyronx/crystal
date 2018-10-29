@@ -1,20 +1,18 @@
 require "spec"
 
-module HashSpec
-  alias RecursiveHash = Hash(RecursiveHash, RecursiveHash)
+private alias RecursiveHash = Hash(RecursiveHash, RecursiveHash)
 
-  class HashBreaker
-    getter x : Int32
+private class HashBreaker
+  getter x : Int32
 
-    def initialize(@x)
-    end
+  def initialize(@x)
   end
-
-  class NeverInstantiated
-  end
-
-  alias RecursiveType = String | Int32 | Array(RecursiveType) | Hash(Symbol, RecursiveType)
 end
+
+private class NeverInstantiated
+end
+
+private alias RecursiveType = String | Int32 | Array(RecursiveType) | Hash(Symbol, RecursiveType)
 
 describe "Hash" do
   describe "empty" do
@@ -64,7 +62,7 @@ describe "Hash" do
   end
 
   describe "==" do
-    assert do
+    it do
       a = {1 => 2, 3 => 4}
       b = {3 => 4, 1 => 2}
       c = {2 => 3}
@@ -77,7 +75,7 @@ describe "Hash" do
       d.should_not eq(a)
     end
 
-    assert do
+    it do
       a = {1 => nil}
       b = {3 => 4}
       a.should_not eq(b)
@@ -107,13 +105,52 @@ describe "Hash" do
     end
   end
 
-  describe "fetch" do
-    it "fetches with one argument" do
-      a = {1 => 2}
-      a.fetch(1).should eq(2)
-      a.should eq({1 => 2})
+  describe "dig?" do
+    it "gets the value at given path given splat" do
+      ary = [1, 2, 3]
+      h = {"a" => {"b" => {"c" => [10, 20]}}, ary => {"a" => "b"}}
+
+      h.dig?("a", "b", "c").should eq([10, 20])
+      h.dig?(ary, "a").should eq("b")
     end
 
+    it "returns nil if not found" do
+      ary = [1, 2, 3]
+      h = {"a" => {"b" => {"c" => 300}}, ary => {"a" => "b"}}
+
+      h.dig?("a", "b", "c", "d", "e").should be_nil
+      h.dig?("z").should be_nil
+      h.dig?("").should be_nil
+    end
+  end
+
+  describe "dig" do
+    it "gets the value at given path given splat" do
+      ary = [1, 2, 3]
+      h = {"a" => {"b" => {"c" => [10, 20]}}, ary => {"a" => "b", "c" => nil}}
+
+      h.dig("a", "b", "c").should eq([10, 20])
+      h.dig(ary, "a").should eq("b")
+      h.dig(ary, "c").should eq(nil)
+    end
+
+    it "raises KeyError if not found" do
+      ary = [1, 2, 3]
+      h = {"a" => {"b" => {"c" => 300}}, ary => {"a" => "b"}}
+
+      expect_raises KeyError, %(Hash value not diggable for key: "c") do
+        h.dig("a", "b", "c", "d", "e")
+      end
+      expect_raises KeyError, %(Missing hash key: "z") do
+        h.dig("z")
+      end
+      expect_raises KeyError, %(Missing hash key: "") do
+        h.dig("")
+      end
+    end
+  end
+
+  describe "fetch" do
     it "fetches with default value" do
       a = {1 => 2}
       a.fetch(1, 3).should eq(2)
@@ -126,13 +163,6 @@ describe "Hash" do
       a.fetch(1) { |k| k * 3 }.should eq(2)
       a.fetch(2) { |k| k * 3 }.should eq(6)
       a.should eq({1 => 2})
-    end
-
-    it "fetches and raises" do
-      a = {1 => 2}
-      expect_raises KeyError, "Missing hash key: 2" do
-        a.fetch(2)
-      end
     end
   end
 
@@ -148,47 +178,47 @@ describe "Hash" do
     end
 
     it "works with mixed types" do
-      {1 => :a, "a" => 1, 1.0 => "a", :a => 1.0}.values_at(1, "a", 1.0, :a).should eq({:a, 1, "a", 1.0})
+      {1 => :a, "a" => 1, 2.0 => "a", :a => 1.0}.values_at(1, "a", 2.0, :a).should eq({:a, 1, "a", 1.0})
     end
   end
 
-  describe "key" do
+  describe "key_for" do
     it "returns the first key with the given value" do
       hash = {"foo" => "bar", "baz" => "qux"}
-      hash.key("bar").should eq("foo")
-      hash.key("qux").should eq("baz")
+      hash.key_for("bar").should eq("foo")
+      hash.key_for("qux").should eq("baz")
     end
 
     it "raises when no key pairs with the given value" do
       expect_raises KeyError do
-        {"foo" => "bar"}.key("qux")
+        {"foo" => "bar"}.key_for("qux")
       end
     end
 
     describe "if block is given," do
       it "returns the first key with the given value" do
         hash = {"foo" => "bar", "baz" => "bar"}
-        hash.key("bar") { |value| value.upcase }.should eq("foo")
+        hash.key_for("bar") { |value| value.upcase }.should eq("foo")
       end
 
       it "yields the argument if no hash key pairs with the value" do
         hash = {"foo" => "bar"}
-        hash.key("qux") { |value| value.upcase }.should eq("QUX")
+        hash.key_for("qux") { |value| value.upcase }.should eq("QUX")
       end
     end
   end
 
-  describe "key?" do
+  describe "key_for?" do
     it "returns the first key with the given value" do
       hash = {"foo" => "bar", "baz" => "qux"}
-      hash.key?("bar").should eq("foo")
-      hash.key?("qux").should eq("baz")
+      hash.key_for?("bar").should eq("foo")
+      hash.key_for?("qux").should eq("baz")
     end
 
     it "returns nil if no key pairs with the given value" do
       hash = {"foo" => "bar", "baz" => "qux"}
-      hash.key?("foobar").should eq nil
-      hash.key?("bazqux").should eq nil
+      hash.key_for?("foobar").should eq nil
+      hash.key_for?("bazqux").should eq nil
     end
   end
 
@@ -201,6 +231,18 @@ describe "Hash" do
     it "has key" do
       a = {1 => 2}
       a.has_key?(1).should be_true
+    end
+  end
+
+  describe "has_value?" do
+    it "returns true if contains the value" do
+      a = {1 => 2, 3 => 4, 5 => 6}
+      a.has_value?(4).should be_true
+    end
+
+    it "returns false if does not contain the value" do
+      a = {1 => 2, 3 => 4, 5 => 6}
+      a.has_value?(3).should be_false
     end
   end
 
@@ -247,6 +289,22 @@ describe "Hash" do
       a = {1 => 2}
       a.delete(2).should be_nil
     end
+
+    describe "with block" do
+      it "returns the value if a key is found" do
+        a = {1 => 2}
+        a.delete(1) { 5 }.should eq(2)
+      end
+
+      it "returns the value of the block if key is not found" do
+        a = {1 => 2}
+        a.delete(3) { |key| key }.should eq(3)
+      end
+
+      it "returns nil if key is found and value is nil" do
+        {3 => nil}.delete(3) { 7 }.should be_nil
+      end
+    end
   end
 
   describe "size" do
@@ -269,10 +327,10 @@ describe "Hash" do
   end
 
   describe "to_s" do
-    assert { {1 => 2, 3 => 4}.to_s.should eq("{1 => 2, 3 => 4}") }
+    it { {1 => 2, 3 => 4}.to_s.should eq("{1 => 2, 3 => 4}") }
 
-    assert do
-      h = {} of HashSpec::RecursiveHash => HashSpec::RecursiveHash
+    it do
+      h = {} of RecursiveHash => RecursiveHash
       h[h] = h
       h.to_s.should eq("{{...} => {...}}")
     end
@@ -330,7 +388,7 @@ describe "Hash" do
   end
 
   it "merges recursive type (#1693)" do
-    hash = {:foo => "bar"} of Symbol => HashSpec::RecursiveType
+    hash = {:foo => "bar"} of Symbol => RecursiveType
     result = hash.merge({:foobar => "foo"})
     result.should eq({:foo => "bar", :foobar => "foo"})
   end
@@ -410,6 +468,83 @@ describe "Hash" do
     h1.should eq({:a => 1, :b => 2, :c => 3})
   end
 
+  it "compacts" do
+    h1 = {:a => 1, :b => 2, :c => nil}
+
+    h2 = h1.compact
+    h2.should be_a(Hash(Symbol, Int32))
+    h2.should eq({:a => 1, :b => 2})
+  end
+
+  it "compacts!" do
+    h1 = {:a => 1, :b => 2, :c => nil}
+
+    h2 = h1.compact!
+    h2.should eq({:a => 1, :b => 2})
+    h2.should be(h1)
+  end
+
+  it "returns nil when using compact! and no changes were made" do
+    h1 = {:a => 1, :b => 2, :c => 3}
+
+    h2 = h1.compact!
+    h2.should be_nil
+    h1.should eq({:a => 1, :b => 2, :c => 3})
+  end
+
+  it "transforms keys" do
+    h1 = {1 => :a, 2 => :b, 3 => :c}
+
+    h2 = h1.transform_keys { |x| x + 1 }
+    h2.should eq({2 => :a, 3 => :b, 4 => :c})
+  end
+
+  it "transforms keys with type casting" do
+    h1 = {:a => 1, :b => 2, :c => 3}
+
+    h2 = h1.transform_keys { |x| x.to_s.upcase }
+    h2.should be_a(Hash(String, Int32))
+    h2.should eq({"A" => 1, "B" => 2, "C" => 3})
+  end
+
+  it "returns empty hash when transforming keys of an empty hash" do
+    h1 = {} of Int32 => Symbol
+
+    h2 = h1.transform_keys { |x| x + 1 }
+    h2.should be_a(Hash(Int32, Symbol))
+    h2.empty?.should be_true
+  end
+
+  it "transforms values" do
+    h1 = {:a => 1, :b => 2, :c => 3}
+
+    h2 = h1.transform_values { |x| x + 1 }
+    h2.should eq({:a => 2, :b => 3, :c => 4})
+  end
+
+  it "transforms values with type casting values" do
+    h1 = {:a => 1, :b => 2, :c => 3}
+
+    h2 = h1.transform_values { |x| x.to_s }
+    h2.should be_a(Hash(Symbol, String))
+    h2.should eq({:a => "1", :b => "2", :c => "3"})
+  end
+
+  it "returns empty hash when transforming values of an empty hash" do
+    h1 = {} of Symbol => Int32
+
+    h2 = h1.transform_values { |x| x + 1 }
+    h2.should be_a(Hash(Symbol, Int32))
+    h2.empty?.should be_true
+  end
+
+  it "transform values in place" do
+    h = {:a => 1, :b => 2, :c => 3}
+
+    h.transform_values!(&.+(1))
+    h.should eq({:a => 2, :b => 3, :c => 4})
+  end
+
   it "zips" do
     ary1 = [1, 2, 3]
     ary2 = ['a', 'b', 'c']
@@ -430,6 +565,16 @@ describe "Hash" do
   it "gets first value" do
     h = {1 => 2, 3 => 4}
     h.first_value.should eq(2)
+  end
+
+  it "gets last key" do
+    h = {1 => 2, 3 => 4}
+    h.last_key.should eq(3)
+  end
+
+  it "gets last value" do
+    h = {1 => 2, 3 => 4}
+    h.last_value.should eq(4)
   end
 
   it "shifts" do
@@ -492,25 +637,24 @@ describe "Hash" do
   end
 
   it "computes hash" do
-    h = { {1 => 2} => {3 => 4} }
-    h.hash.should_not eq(h.object_id)
-
+    h1 = { {1 => 2} => {3 => 4} }
     h2 = { {1 => 2} => {3 => 4} }
-    h.hash.should eq(h2.hash)
+    h1.hash.should eq(h2.hash)
 
     h3 = {1 => 2, 3 => 4}
     h4 = {3 => 4, 1 => 2}
+
     h3.hash.should eq(h4.hash)
   end
 
   it "fetches from empty hash with default value" do
-    x = {} of Int32 => HashSpec::HashBreaker
-    breaker = x.fetch(10) { HashSpec::HashBreaker.new(1) }
+    x = {} of Int32 => HashBreaker
+    breaker = x.fetch(10) { HashBreaker.new(1) }
     breaker.x.should eq(1)
   end
 
   it "does to to_s with instance that was never instantiated" do
-    x = {} of Int32 => HashSpec::NeverInstantiated
+    x = {} of Int32 => NeverInstantiated
     x.to_s.should eq("{}")
   end
 
@@ -523,6 +667,36 @@ describe "Hash" do
     h3 = h2.invert
     h3.size.should eq(2)
     %w(a c).should contain h3[1]
+  end
+
+  it "does each" do
+    hash = {"foo" => 1, "bar" => 2}
+    ks = [] of String
+    vs = [] of Int32
+    hash.each do |k, v|
+      ks << k
+      vs << v
+    end.should be_nil
+    ks.should eq(["foo", "bar"])
+    vs.should eq([1, 2])
+  end
+
+  it "does each_key" do
+    hash = {"foo" => 1, "bar" => 2}
+    ks = [] of String
+    hash.each_key do |k|
+      ks << k
+    end.should be_nil
+    ks.should eq(["foo", "bar"])
+  end
+
+  it "does each_value" do
+    hash = {"foo" => 1, "bar" => 2}
+    vs = [] of Int32
+    hash.each_value do |v|
+      vs << v
+    end.should be_nil
+    vs.should eq([1, 2])
   end
 
   it "gets each iterator" do
@@ -559,14 +733,14 @@ describe "Hash" do
     it "pass key, value, index values into block" do
       hash = {2 => 4, 5 => 10, 7 => 14}
       results = [] of Int32
-      hash.each_with_index { |(k, v), i| results << k + v + i }
+      hash.each_with_index { |(k, v), i| results << k + v + i }.should be_nil
       results.should eq [6, 16, 23]
     end
 
     it "can be used with offset" do
       hash = {2 => 4, 5 => 10, 7 => 14}
       results = [] of Int32
-      hash.each_with_index(3) { |(k, v), i| results << k + v + i }
+      hash.each_with_index(3) { |(k, v), i| results << k + v + i }.should be_nil
       results.should eq [9, 19, 26]
     end
   end
@@ -675,9 +849,9 @@ describe "Hash" do
   end
 
   describe "reject" do
-    assert { {:a => 2, :b => 3}.reject(:b, :d).should eq({:a => 2}) }
-    assert { {:a => 2, :b => 3}.reject(:b, :a).should eq({} of Symbol => Int32) }
-    assert { {:a => 2, :b => 3}.reject([:b, :a]).should eq({} of Symbol => Int32) }
+    it { {:a => 2, :b => 3}.reject(:b, :d).should eq({:a => 2}) }
+    it { {:a => 2, :b => 3}.reject(:b, :a).should eq({} of Symbol => Int32) }
+    it { {:a => 2, :b => 3}.reject([:b, :a]).should eq({} of Symbol => Int32) }
     it "does not change currrent hash" do
       h = {:a => 3, :b => 6, :c => 9}
       h2 = h.reject(:b, :c)
@@ -686,9 +860,9 @@ describe "Hash" do
   end
 
   describe "reject!" do
-    assert { {:a => 2, :b => 3}.reject!(:b, :d).should eq({:a => 2}) }
-    assert { {:a => 2, :b => 3}.reject!(:b, :a).should eq({} of Symbol => Int32) }
-    assert { {:a => 2, :b => 3}.reject!([:b, :a]).should eq({} of Symbol => Int32) }
+    it { {:a => 2, :b => 3}.reject!(:b, :d).should eq({:a => 2}) }
+    it { {:a => 2, :b => 3}.reject!(:b, :a).should eq({} of Symbol => Int32) }
+    it { {:a => 2, :b => 3}.reject!([:b, :a]).should eq({} of Symbol => Int32) }
     it "changes currrent hash" do
       h = {:a => 3, :b => 6, :c => 9}
       h.reject!(:b, :c)
@@ -697,10 +871,10 @@ describe "Hash" do
   end
 
   describe "select" do
-    assert { {:a => 2, :b => 3}.select(:b, :d).should eq({:b => 3}) }
-    assert { {:a => 2, :b => 3}.select.should eq({} of Symbol => Int32) }
-    assert { {:a => 2, :b => 3}.select(:b, :a).should eq({:a => 2, :b => 3}) }
-    assert { {:a => 2, :b => 3}.select([:b, :a]).should eq({:a => 2, :b => 3}) }
+    it { {:a => 2, :b => 3}.select(:b, :d).should eq({:b => 3}) }
+    it { {:a => 2, :b => 3}.select.should eq({} of Symbol => Int32) }
+    it { {:a => 2, :b => 3}.select(:b, :a).should eq({:a => 2, :b => 3}) }
+    it { {:a => 2, :b => 3}.select([:b, :a]).should eq({:a => 2, :b => 3}) }
     it "does not change currrent hash" do
       h = {:a => 3, :b => 6, :c => 9}
       h2 = h.select(:b, :c)
@@ -709,10 +883,10 @@ describe "Hash" do
   end
 
   describe "select!" do
-    assert { {:a => 2, :b => 3}.select!(:b, :d).should eq({:b => 3}) }
-    assert { {:a => 2, :b => 3}.select!.should eq({} of Symbol => Int32) }
-    assert { {:a => 2, :b => 3}.select!(:b, :a).should eq({:a => 2, :b => 3}) }
-    assert { {:a => 2, :b => 3}.select!([:b, :a]).should eq({:a => 2, :b => 3}) }
+    it { {:a => 2, :b => 3}.select!(:b, :d).should eq({:b => 3}) }
+    it { {:a => 2, :b => 3}.select!.should eq({} of Symbol => Int32) }
+    it { {:a => 2, :b => 3}.select!(:b, :a).should eq({:a => 2, :b => 3}) }
+    it { {:a => 2, :b => 3}.select!([:b, :a]).should eq({:a => 2, :b => 3}) }
     it "does change currrent hash" do
       h = {:a => 3, :b => 6, :c => 9}
       h.select!(:b, :c)

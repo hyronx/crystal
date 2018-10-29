@@ -288,4 +288,49 @@ describe "Code gen: named tuple" do
       NamedTuple(x: Nil, y: Int32).foo
       )).to_string.should eq("NamedTupleLiteral")
   end
+
+  it "assigns two same-size named tuple types to a same var (#3132)" do
+    run(%(
+      t = {x: true}
+      t
+      t = {x: 2}
+      t[:x]
+      )).to_i.should eq(2)
+  end
+
+  it "downcasts union inside tuple to value (#3907)" do
+    codegen(%(
+      struct Foo
+      end
+
+      foo = Foo.new
+
+      x = {a: 0, b: foo}
+      z = x[:a]
+      x = {a: 0, b: z}
+      ))
+  end
+
+  it "accesses T and creates instance from it" do
+    run("
+      struct NamedTuple
+        def named_args
+          T
+        end
+      end
+
+      class Foo
+        def initialize(@x : Int32)
+        end
+
+        def x
+          @x
+        end
+      end
+
+      t = {a: Foo.new(1)}
+      f = t.named_args[:a].new(2)
+      f.x
+      ").to_i.should eq(2)
+  end
 end

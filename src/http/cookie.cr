@@ -31,7 +31,7 @@ module HTTP
         header << "#{URI.escape @name}=#{URI.escape value}"
         header << "; domain=#{domain}" if domain
         header << "; path=#{path}" if path
-        header << "; expires=#{HTTP.rfc1123_date(expires)}" if expires
+        header << "; expires=#{HTTP.format_time(expires)}" if expires
         header << "; Secure" if @secure
         header << "; HttpOnly" if @http_only
         header << "; #{@extension}" if @extension
@@ -81,7 +81,7 @@ module HTTP
       end
 
       CookieString    = /(?:^|; )#{Regex::CookiePair}/
-      SetCookieString = /^#{Regex::CookiePair}(?:; #{Regex::CookieAV})*$/
+      SetCookieString = /^#{Regex::CookiePair}(?:;\s*#{Regex::CookieAV})*$/
 
       def parse_cookies(header)
         header.scan(CookieString).each do |pair|
@@ -145,39 +145,39 @@ module HTTP
         values.each do |header|
           Cookie::Parser.parse_cookies(header) { |cookie| self << cookie }
         end
-        headers.delete "Cookie"
       end
 
       if values = headers.get?("Set-Cookie")
         values.each do |header|
           Cookie::Parser.parse_set_cookie(header).try { |cookie| self << cookie }
         end
-        headers.delete "Set-Cookie"
       end
       self
     end
 
-    # Create a new empty instance
+    # Create a new empty instance.
     def initialize
       @cookies = {} of String => Cookie
     end
 
-    # Set a new cookie in the collection with a string value.
+    # Sets a new cookie in the collection with a string value.
     # This creates a never expiring, insecure, not HTTP only cookie with
     # no explicit domain restriction and the path `/`.
     #
     # ```
+    # request = HTTP::Request.new "GET", "/"
     # request.cookies["foo"] = "bar"
     # ```
     def []=(key, value : String)
       self[key] = Cookie.new(key, value)
     end
 
-    # Set a new cookie in the collection to the given `HTTP::Cookie`
+    # Sets a new cookie in the collection to the given `HTTP::Cookie`
     # instance. The name attribute must match the given *key*, else
     # `ArgumentError` is raised.
     #
     # ```
+    # response = HTTP::Client::Response.new(200)
     # response.cookies["foo"] = HTTP::Cookie.new("foo", "bar", "/admin", Time.now + 12.hours, secure: true)
     # ```
     def []=(key, value : Cookie)
@@ -200,6 +200,7 @@ module HTTP
     # Get the current `HTTP::Cookie` for the given *key* or `nil` if none is set.
     #
     # ```
+    # request = HTTP::Request.new "GET", "/"
     # request.cookies["foo"]? # => nil
     # request.cookies["foo"] = "bar"
     # request.cookies["foo"]?.try &.value # > "bar"
@@ -211,7 +212,8 @@ module HTTP
     # Returns `true` if a cookie with the given *key* exists.
     #
     # ```
-    # request.cookies.has_key?("foo") #=> true
+    # request.cookies.has_key?("foo") # => true
+    # ```
     def has_key?(key)
       @cookies.has_key?(key)
     end
@@ -220,7 +222,7 @@ module HTTP
     # with the same name if present.
     #
     # ```
-    # response.cookies << Cookie.new("foo", "bar", http_only: true)
+    # response.cookies << HTTP::Cookie.new("foo", "bar", http_only: true)
     # ```
     def <<(cookie : Cookie)
       self[cookie.name] = cookie
@@ -248,7 +250,7 @@ module HTTP
     # `Cookie` headers in it.
     def add_request_headers(headers)
       headers.delete("Cookie")
-      headers.add("Cookie", map(&.to_cookie_header).join("; "))
+      headers.add("Cookie", map(&.to_cookie_header).join("; ")) unless empty?
 
       headers
     end
@@ -265,7 +267,7 @@ module HTTP
       headers
     end
 
-    # Returns this collection as a plain Hash.
+    # Returns this collection as a plain `Hash`.
     def to_h
       @cookies.dup
     end

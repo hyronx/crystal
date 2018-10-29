@@ -70,13 +70,16 @@ module Crystal
 
     private def instrument(node, add_as_typeof = false)
       if (location = node.location) && location.line_number != ignore_line
+        splat = node.is_a?(Splat)
+        node = node.exp if node.is_a?(Splat)
         @nested_block_visitor.not_nil!.accept(node)
         args = [NumberLiteral.new(location.line_number)] of ASTNode
         if node.is_a?(TupleLiteral)
           args << ArrayLiteral.new(node.elements.map { |e| StringLiteral.new(e.to_s).as(ASTNode) })
         end
-        call = Call.new(Global.new("$p"), "i", args, Block.new([] of Var, node.as(ASTNode)))
+        call = Call.new(Call.new(nil, "_p"), "i", args, Block.new([] of Var, node.as(ASTNode)))
         call = Cast.new(call, TypeOf.new([node.clone] of ASTNode)) if add_as_typeof
+        call = Splat.new(call) if splat
         call
       else
         node
@@ -93,16 +96,16 @@ module Crystal
 
     def transform(node : MultiAssign)
       node.values = if node.values.size == 1
-                      [instrument(node.values[0])]
+                      [instrument(node.values[0])] of ASTNode
                     else
                       rhs = TupleLiteral.new(node.values)
                       rhs.location = node.location
-                      [instrument(rhs)]
+                      [instrument(rhs)] of ASTNode
                     end
       node
     end
 
-    def transform(node : NilLiteral | NumberLiteral | StringLiteral | BoolLiteral | CharLiteral | SymbolLiteral | TupleLiteral | ArrayLiteral | StringInterpolation | RegexLiteral | Var | InstanceVar | ClassVar | Global | TypeOf | UnaryExpression | BinaryOp | IsA | ReadInstanceVar)
+    def transform(node : NilLiteral | NumberLiteral | StringLiteral | BoolLiteral | CharLiteral | SymbolLiteral | TupleLiteral | ArrayLiteral | HashLiteral | StringInterpolation | RegexLiteral | Var | InstanceVar | ClassVar | Global | TypeOf | UnaryExpression | BinaryOp | IsA | ReadInstanceVar)
       instrument(node)
     end
 

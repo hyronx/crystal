@@ -1,7 +1,10 @@
 require "spec"
 require "json"
+require "uuid"
+require "uuid/json"
+require "big/json"
 
-class JSONPerson
+private class JSONPerson
   JSON.mapping({
     name: {type: String},
     age:  {type: Int32, nilable: true},
@@ -13,31 +16,39 @@ class JSONPerson
   end
 end
 
-class StrictJSONPerson
+private class StrictJSONPerson
   JSON.mapping({
     name: {type: String},
     age:  {type: Int32, nilable: true},
   }, true)
 end
 
-class JSONPersonEmittingNull
+private class JSONPersonEmittingNull
   JSON.mapping({
     name: {type: String},
     age:  {type: Int32, nilable: true, emit_null: true},
   })
 end
 
-class JSONWithBool
+private class JSONWithBool
   JSON.mapping value: Bool
 end
 
-class JSONWithTime
+private class JSONWithUUID
+  JSON.mapping value: UUID
+end
+
+private class JSONWithBigDecimal
+  JSON.mapping value: BigDecimal
+end
+
+private class JSONWithTime
   JSON.mapping({
     value: {type: Time, converter: Time::Format.new("%F %T")},
   })
 end
 
-class JSONWithNilableTime
+private class JSONWithNilableTime
   JSON.mapping({
     value: {type: Time, nilable: true, converter: Time::Format.new("%F")},
   })
@@ -46,7 +57,7 @@ class JSONWithNilableTime
   end
 end
 
-class JSONWithNilableTimeEmittingNull
+private class JSONWithNilableTimeEmittingNull
   JSON.mapping({
     value: {type: Time, nilable: true, converter: Time::Format.new("%F"), emit_null: true},
   })
@@ -55,30 +66,36 @@ class JSONWithNilableTimeEmittingNull
   end
 end
 
-class JSONWithSimpleMapping
+private class JSONWithPropertiesKey
+  JSON.mapping(
+    properties: Hash(String, String),
+  )
+end
+
+private class JSONWithSimpleMapping
   JSON.mapping({name: String, age: Int32})
 end
 
-class JSONWithKeywordsMapping
+private class JSONWithKeywordsMapping
   JSON.mapping({end: Int32, abstract: Int32})
 end
 
-class JSONWithAny
+private class JSONWithAny
   JSON.mapping({name: String, any: JSON::Any})
 end
 
-class JsonWithProblematicKeys
+private class JsonWithProblematicKeys
   JSON.mapping({
     key:  Int32,
     pull: Int32,
   })
 end
 
-class JsonWithSet
+private class JsonWithSet
   JSON.mapping({set: Set(String)})
 end
 
-class JsonWithDefaults
+private class JsonWithDefaults
   JSON.mapping({
     a: {type: Int32, default: 11},
     b: {type: String, default: "Haha"},
@@ -91,52 +108,81 @@ class JsonWithDefaults
   })
 end
 
-class JSONWithSmallIntegers
+private class JSONWithSmallIntegers
   JSON.mapping({
     foo: Int16,
     bar: Int8,
   })
 end
 
-class JSONWithTimeEpoch
+private class JSONWithTimeEpoch
   JSON.mapping({
     value: {type: Time, converter: Time::EpochConverter},
   })
 end
 
-class JSONWithTimeEpochMillis
+private class JSONWithTimeEpochMillis
   JSON.mapping({
     value: {type: Time, converter: Time::EpochMillisConverter},
   })
 end
 
-class JSONWithRaw
+private class JSONWithRaw
   JSON.mapping({
     value: {type: String, converter: String::RawConverter},
   })
 end
 
-class JSONWithRoot
+private class JSONWithRoot
   JSON.mapping({
     result: {type: Array(JSONPerson), root: "heroes"},
   })
 end
 
-class JSONWithNilableRoot
+private class JSONWithNilableRoot
   JSON.mapping({
     result: {type: Array(JSONPerson), root: "heroes", nilable: true},
   })
 end
 
-class JSONWithNilableRootEmitNull
+private class JSONWithNilableRootEmitNull
   JSON.mapping({
     result: {type: Array(JSONPerson), root: "heroes", nilable: true, emit_null: true},
   })
 end
 
-class JSONWithNilableUnion
+private class JSONWithNilableUnion
   JSON.mapping({
     value: Int32 | Nil,
+  })
+end
+
+private class JSONWithNilableUnion2
+  JSON.mapping({
+    value: Int32?,
+  })
+end
+
+private class JSONWithPresence
+  JSON.mapping({
+    first_name: {type: String?, presence: true, nilable: true},
+    last_name:  {type: String?, presence: true, nilable: true},
+  })
+end
+
+private class JSONWithQueryAttributes
+  JSON.mapping({
+    foo?: Bool,
+    bar?: {type: Bool, default: false, presence: true, key: "is_bar"},
+  })
+end
+
+private class JSONWithOverwritingQueryAttributes
+  property foo : Symbol?
+  property bar : Symbol?
+  JSON.mapping({
+    foo?: Bool,
+    bar?: {type: Bool, default: false, presence: true, key: "is_bar"},
   })
 end
 
@@ -175,15 +221,61 @@ describe "JSON mapping" do
   end
 
   it "parses strict person with unknown attributes" do
-    expect_raises JSON::ParseException, "unknown json attribute: foo" do
-      StrictJSONPerson.from_json(%({"name": "John", "age": 30, "foo": "bar"}))
+    error_message = <<-'MSG'
+      Unknown JSON attribute: foo
+        parsing StrictJSONPerson
+      MSG
+    ex = expect_raises JSON::MappingError, error_message do
+      StrictJSONPerson.from_json <<-JSON
+        {
+          "name": "John",
+          "age": 30,
+          "foo": "bar"
+        }
+        JSON
     end
+    ex.location.should eq({4, 3})
   end
 
   it "raises if non-nilable attribute is nil" do
-    expect_raises JSON::ParseException, "missing json attribute: name" do
+    error_message = <<-'MSG'
+      Missing JSON attribute: name
+        parsing JSONPerson at 1:1
+      MSG
+    ex = expect_raises JSON::MappingError, error_message do
       JSONPerson.from_json(%({"age": 30}))
     end
+    ex.location.should eq({1, 1})
+  end
+
+  it "raises if not an object" do
+    error_message = <<-'MSG'
+      Expected begin_object but was string at 1:1
+        parsing StrictJSONPerson at 0:0
+      MSG
+    ex = expect_raises JSON::MappingError, error_message do
+      StrictJSONPerson.from_json <<-JSON
+        "foo"
+        JSON
+    end
+    ex.location.should eq({1, 1})
+  end
+
+  it "raises if data type does not match" do
+    error_message = <<-'MSG'
+      Expected int but was string at 3:15
+        parsing StrictJSONPerson#age at 3:3
+      MSG
+    ex = expect_raises JSON::MappingError, error_message do
+      StrictJSONPerson.from_json <<-JSON
+        {
+          "name": "John",
+          "age": "foo",
+          "foo": "bar"
+        }
+        JSON
+    end
+    ex.location.should eq({3, 15})
   end
 
   it "doesn't emit null by default when doing to_json" do
@@ -201,10 +293,16 @@ describe "JSON mapping" do
     json.value.should be_false
   end
 
+  it "parses UUID" do
+    uuid = JSONWithUUID.from_json(%({"value": "ba714f86-cac6-42c7-8956-bcf5105e1b81"}))
+    uuid.should be_a(JSONWithUUID)
+    uuid.value.should eq(UUID.new("ba714f86-cac6-42c7-8956-bcf5105e1b81"))
+  end
+
   it "parses json with Time::Format converter" do
     json = JSONWithTime.from_json(%({"value": "2014-10-31 23:37:16"}))
     json.value.should be_a(Time)
-    json.value.to_s.should eq("2014-10-31 23:37:16")
+    json.value.to_s.should eq("2014-10-31 23:37:16 UTC")
     json.to_json.should eq(%({"value":"2014-10-31 23:37:16"}))
   end
 
@@ -229,6 +327,14 @@ describe "JSON mapping" do
   it "outputs with converter when nilable when emit_null is true" do
     json = JSONWithNilableTimeEmittingNull.new
     json.to_json.should eq(%({"value":null}))
+  end
+
+  it "outputs JSON with properties key" do
+    input = {
+      properties: {"foo" => "bar"},
+    }.to_json
+    json = JSONWithPropertiesKey.from_json(input)
+    json.to_json.should eq(input)
   end
 
   it "parses json with keywords" do
@@ -339,7 +445,7 @@ describe "JSON mapping" do
     string = %({"value":1459859781})
     json = JSONWithTimeEpoch.from_json(string)
     json.value.should be_a(Time)
-    json.value.should eq(Time.epoch(1459859781))
+    json.value.should eq(Time.unix(1459859781))
     json.to_json.should eq(string)
   end
 
@@ -347,7 +453,7 @@ describe "JSON mapping" do
     string = %({"value":1459860483856})
     json = JSONWithTimeEpochMillis.from_json(string)
     json.value.should be_a(Time)
-    json.value.should eq(Time.epoch_ms(1459860483856))
+    json.value.should eq(Time.unix_ms(1459860483856))
     json.to_json.should eq(string)
   end
 
@@ -402,5 +508,103 @@ describe "JSON mapping" do
     obj = JSONWithNilableUnion.from_json(%({"value": null}))
     obj.value.should be_nil
     obj.to_json.should eq(%({}))
+
+    obj = JSONWithNilableUnion.from_json(%({}))
+    obj.value.should be_nil
+    obj.to_json.should eq(%({}))
+  end
+
+  it "parses nilable union2" do
+    obj = JSONWithNilableUnion2.from_json(%({"value": 1}))
+    obj.value.should eq(1)
+    obj.to_json.should eq(%({"value":1}))
+
+    obj = JSONWithNilableUnion2.from_json(%({"value": null}))
+    obj.value.should be_nil
+    obj.to_json.should eq(%({}))
+
+    obj = JSONWithNilableUnion2.from_json(%({}))
+    obj.value.should be_nil
+    obj.to_json.should eq(%({}))
+  end
+
+  describe "parses JSON with presence markers" do
+    it "parses person with absent attributes" do
+      json = JSONWithPresence.from_json(%({"first_name": null}))
+      json.first_name.should be_nil
+      json.first_name_present?.should be_true
+      json.last_name.should be_nil
+      json.last_name_present?.should be_false
+    end
+  end
+
+  describe "with query attributes" do
+    it "defines query getter" do
+      json = JSONWithQueryAttributes.from_json(%({"foo": true}))
+      json.foo?.should be_true
+      json.bar?.should be_false
+    end
+
+    it "defines query getter with class restriction" do
+      {% begin %}
+        {% methods = JSONWithQueryAttributes.methods %}
+        {{ methods.find(&.name.==("foo?")).return_type }}.should eq(Bool)
+        {{ methods.find(&.name.==("bar?")).return_type }}.should eq(Bool)
+      {% end %}
+    end
+
+    it "defines non-query setter and presence methods" do
+      json = JSONWithQueryAttributes.from_json(%({"foo": false}))
+      json.bar_present?.should be_false
+      json.bar = true
+      json.bar?.should be_true
+    end
+
+    it "maps non-query attributes" do
+      json = JSONWithQueryAttributes.from_json(%({"foo": false, "is_bar": false}))
+      json.bar_present?.should be_true
+      json.bar?.should be_false
+      json.bar = true
+      json.to_json.should eq(%({"foo":false,"is_bar":true}))
+    end
+
+    it "raises if non-nilable attribute is nil" do
+      error_message = <<-'MSG'
+        Missing JSON attribute: foo
+          parsing JSONWithQueryAttributes at 1:1
+        MSG
+      ex = expect_raises JSON::MappingError, error_message do
+        JSONWithQueryAttributes.from_json(%({"is_bar": true}))
+      end
+      ex.location.should eq({1, 1})
+    end
+
+    it "overwrites non-query attributes" do
+      json = JSONWithOverwritingQueryAttributes.from_json(%({"foo": true}))
+      typeof(json.@foo).should eq(Bool)
+      typeof(json.@bar).should eq(Bool)
+    end
+  end
+
+  describe "BigDecimal" do
+    it "parses json string with BigDecimal" do
+      json = JSONWithBigDecimal.from_json(%({"value": "10.05"}))
+      json.value.should eq(BigDecimal.new("10.05"))
+    end
+
+    it "parses large json ints with BigDecimal" do
+      json = JSONWithBigDecimal.from_json(%({"value": 9223372036854775808}))
+      json.value.should eq(BigDecimal.new("9223372036854775808"))
+    end
+
+    it "parses json float with BigDecimal" do
+      json = JSONWithBigDecimal.from_json(%({"value": 10.05}))
+      json.value.should eq(BigDecimal.new("10.05"))
+    end
+
+    it "parses large precision json floats with BigDecimal" do
+      json = JSONWithBigDecimal.from_json(%({"value": 0.00045808999999999997}))
+      json.value.should eq(BigDecimal.new("0.00045808999999999997"))
+    end
   end
 end

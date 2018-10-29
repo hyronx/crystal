@@ -77,7 +77,7 @@ describe XML do
   end
 
   it "parses from io" do
-    io = MemoryIO.new(<<-XML
+    io = IO::Memory.new(<<-XML
       <?xml version='1.0' encoding='UTF-8'?>
       <people>
         <person id="1" id2="2">
@@ -211,7 +211,7 @@ describe XML do
   it "reads big xml file (#1455)" do
     content = "." * 20_000
     string = %(<?xml version="1.0"?><root>#{content}</root>)
-    parsed = XML.parse(MemoryIO.new(string))
+    parsed = XML.parse(IO::Memory.new(string))
     parsed.root.not_nil!.children[0].text.should eq(content)
   end
 
@@ -225,8 +225,25 @@ describe XML do
     root.text = "Peter"
     root.text.should eq("Peter")
 
-    root.content = "Foo"
-    root.content.should eq("Foo")
+    root.content = "Foo 👌"
+    root.content.should eq("Foo 👌")
+  end
+
+  it "doesn't set invalid node content" do
+    doc = XML.parse(<<-XML
+      <?xml version='1.0' encoding='UTF-8'?>
+      <name>John</name>
+      XML
+    )
+    root = doc.root.not_nil!
+    expect_raises(Exception, "Cannot escape") do
+      root.content = "\0"
+    end
+  end
+
+  it "gets empty content" do
+    doc = XML.parse("<foo/>")
+    doc.children.first.content.should eq("")
   end
 
   it "sets node name" do
@@ -238,6 +255,31 @@ describe XML do
     root = doc.root.not_nil!
     root.name = "last-name"
     root.name.should eq("last-name")
+  end
+
+  it "doesn't set invalid node name" do
+    doc = XML.parse(<<-XML
+      <?xml version='1.0' encoding='UTF-8'?>
+      <name>John</name>
+      XML
+    )
+    root = doc.root.not_nil!
+
+    expect_raises(XML::Error, "Invalid node name") do
+      root.name = " foo bar"
+    end
+
+    expect_raises(XML::Error, "Invalid node name") do
+      root.name = "foo bar"
+    end
+
+    expect_raises(XML::Error, "Invalid node name") do
+      root.name = "1foo"
+    end
+
+    expect_raises(XML::Error, "Invalid node name") do
+      root.name = "\0foo"
+    end
   end
 
   it "gets encoding" do
@@ -270,6 +312,21 @@ describe XML do
     doc.version.should eq("1.0")
   end
 
+  it "unlinks nodes" do
+    xml = <<-XML
+        <person id="1">
+          <firstname>Jane</firstname>
+          <lastname>Doe</lastname>
+        </person>
+        XML
+    document = XML.parse(xml)
+
+    node = document.xpath_node("//lastname").not_nil!
+    node.unlink
+
+    document.xpath_node("//lastname").should eq(nil)
+  end
+
   it "does to_s with correct encoding (#2319)" do
     xml_str = <<-XML
     <?xml version='1.0' encoding='UTF-8'?>
@@ -282,17 +339,37 @@ describe XML do
     doc.root.to_s.should eq("<person>\n  <name>たろう</name>\n</person>")
   end
 
-  describe "escape" do
-    it "does not change a safe string" do
-      str = XML.escape("safe_string")
+  it "sets an attribute" do
+    doc = XML.parse(%{<foo />})
+    root = doc.root.not_nil!
 
-      str.should eq("safe_string")
-    end
+    root["bar"] = "baz"
+    root["bar"].should eq("baz")
+    root.to_s.should eq(%{<foo bar="baz"/>})
+  end
 
-    it "escapes dangerous characters from a string" do
-      str = XML.escape("< & >")
+  it "changes an attribute" do
+    doc = XML.parse(%{<foo bar="baz"></foo>})
+    root = doc.root.not_nil!
 
-      str.should eq("&lt; &amp; &gt;")
-    end
+    root["bar"] = "baz"
+    root["bar"].should eq("baz")
+    root.to_s.should eq(%{<foo bar="baz"/>})
+
+    root["bar"] = 1
+    root["bar"].should eq("1")
+  end
+
+  it "deletes an attribute" do
+    doc = XML.parse(%{<foo bar="baz"></foo>})
+    root = doc.root.not_nil!
+
+    res = root.delete("bar")
+    root["bar"]?.should be_nil
+    root.to_s.should eq(%{<foo/>})
+    res.should eq "baz"
+
+    res = root.delete("biz")
+    res.should be_nil
   end
 end
